@@ -95,8 +95,6 @@ class DB : public StreamIn<JSON::JSON>,
 	bool updateShip(const JSON::JSON &, TAG &, Ship &);
 	void addToPath(int ptr);
 
-	static void getDistanceAndBearing(float lat1, float lon1, float lat2, float lon2, float &distance, int &bearing);
-
 	void getShipJSON(const Ship &ship, std::string &content, long int now);
 	std::string getSinglePathJSON(int);
 	std::string getSinglePathGeoJSON(int);
@@ -158,6 +156,11 @@ public:
 
 	int getCount() { return count; }
 	int getMaxCount() { return Nships; }
+
+	// Ship access for ETA calculations
+	int getFirst() { return first; }
+	const std::vector<Ship>& getShips() { return ships; }
+	static void getDistanceAndBearing(float lat1, float lon1, float lat2, float lon2, float &distance, int &bearing);
 
 	void setServerMode(bool b) { server_mode = b; }
 	void setMsgSave(bool b) { msg_save = b; }

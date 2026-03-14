@@ -49,6 +49,8 @@
 #include "Device/ZMQ.h"
 #include "Device/UDP.h"
 #include "Device/N2KsktCAN.h"
+#include "Device/FileNMEA.h"
+#include "DB.h"
 
 class Receiver;
 
@@ -56,10 +58,12 @@ class Receiver;
 class OutputScreen
 {
 	MessageFormat level = MessageFormat::FULL;
+	std::unique_ptr<DB> eta_db;
 
 public:
 	IO::MessageToScreen msg2screen;
 	IO::JSONtoScreen json2screen;
+	IO::ETAScreen eta_screen;
 
 	int verboseUpdateTime = 3;
 
@@ -67,8 +71,12 @@ public:
 
 	void setScreen(const std::string &str);
 	void setScreen(MessageFormat o);
+	MessageFormat getLevel() const { return level; }
 	void connect(Receiver &r);
 	void start();
+	void stop();
+
+	DB* getETADB();
 };
 
 //--------------------------------------------
@@ -120,6 +128,7 @@ class Receiver
 	Device::ZMQ _ZMQ;
 	Device::UDP _UDP;
 	Device::N2KSCAN _N2KSCAN;
+	Device::NMEAFile _NMEAFile;
 
 	TAG tag;
 
@@ -147,6 +156,7 @@ public:
 	Device::ZMQ &ZMQ() { return _ZMQ; }
 	Device::UDP &UDP() { return _UDP; }
 	Device::N2KSCAN &N2KSCAN() { return _N2KSCAN; }
+	Device::NMEAFile &NMEAFile() { return _NMEAFile; }
 
 	// available devices
 	static std::vector<Device::Description> device_list;

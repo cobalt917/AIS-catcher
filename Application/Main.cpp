@@ -90,7 +90,8 @@ static void Usage()
 	Info() << "\t[-M xxx - set additional meta data to generate: T = NMEA timestamp, D = decoder related (signal power, ppm) (default: none)]";
 	Info() << "\t[-n show NMEA messages on screen without detail (-o 1)]";
 	Info() << "\t[-N [optional: port][optional settings] - start http server at port, see README for details]";
-	Info() << "\t[-o set output mode (0 = quiet, 1 = NMEA only, 2 = NMEA+, 3 = NMEA+ in JSON, 4 JSON Sparse, 5 JSON Full (default: 2)]";
+	Info() << "\t[-o set output mode (0 = quiet, 1 = NMEA only, 2 = NMEA+, 3 = NMEA+ in JSON, 4 JSON Sparse, 5 JSON Full, 6 JSON Annotated, 7 ETA (default: 2)]";
+	Info() << "\t    ETA mode settings (-o 7): CPA [2.0] REFRESH [10] LAT [42.372498] LON [-82.918296]";
 	Info() << "\t[-O MMSI - sets the own mmsi of the receiver]";
 	Info() << "\t[-p xxx - set frequency correction for device in PPM (default: zero)]";
 	Info() << "\t[-P xxx.xx.xx.xx yyy - TCP destination address and port (default: off)]";
@@ -114,6 +115,7 @@ static void Usage()
 	Info() << "\t[-r [optional: yy] filename - read IQ data from file or stdin (.), short for -r -ga FORMAT yy FILE filename";
 	Info() << "\t[-t [[protocol]] [host [port]] - read IQ data from remote RTL-TCP instance]";
 	Info() << "\t[-w filename - read IQ data from WAV file, short for -w -gw FILE filename]";
+	Info() << "\t[-R filename - replay timestamped NMEA from file, short for -R -gR FILE filename]";
 	Info() << "\t[-x [server][port] - UDP input of NMEA messages at port on server";
 	Info() << "\t[-y [host [port]] - read IQ data from remote SpyServer]";
 	Info() << "\t[-z [optional [format]] [optional endpoint] - read IQ data from [endpoint] in [format] via ZMQ (default: format is CU8)]";
@@ -130,6 +132,7 @@ static void Usage()
 	Info() << "\t[-gt RTLTCP: HOST [address] PORT [port] TUNER [auto/0.0-50.0] RTLAGC [on/off] FREQOFFSET [-150-150] PROTOCOL [none/rtltcp] TIMEOUT [1-60] ]";
 	Info() << "\t[-gu SOAPYSDR: DEVICE [string] GAIN [string] AGC [on/off] STREAM [string] SETTING [string] CH [0+] PROBE [on/off] ANTENNA [string] ]";
 	Info() << "\t[-gw WAV file: FILE [filename] ]";
+	Info() << "\t[-gR NMEA file: FILE [filename] SPEED [1.0] REALTIME [on/off] LOOP [on/off] ]";
 	Info() << "\t[-gy SPYSERVER: HOST [address] PORT [port] GAIN [0-50] ]";
 	Info() << "\t[-gz ZMQ: ENDPOINT [endpoint] FORMAT [CF32/CS16/CU8/CS8] ]";
 	Info() << "";
@@ -439,6 +442,7 @@ int main(int argc, char *argv[])
 				{
 					parseSettings(screen.msg2screen, argv, ptr + 1, argc);
 					parseSettings(screen.json2screen, argv, ptr + 1, argc);
+					parseSettings(screen.eta_screen, argv, ptr + 1, argc);
 				}
 				break;
 			case 'F':
@@ -547,6 +551,16 @@ int main(int argc, char *argv[])
 					_receivers.back()->RAW().Set("FILE", arg1);
 				if (count == 2)
 					_receivers.back()->RAW().Set("FORMAT", arg1).Set("FILE", arg2);
+				break;
+			case 'R':
+				Assert(count <= 1, param, "requires at most one parameter [filename].");
+				if (++nrec > 1)
+				{
+					_receivers.push_back(std::unique_ptr<Receiver>(new Receiver()));
+				}
+				_receivers.back()->InputType() = Type::NMEAFILE;
+				if (count == 1)
+					_receivers.back()->NMEAFile().Set("FILE", arg1);
 				break;
 			case 'e':
 				Assert(count == 2, param, "requires two parameters [baudrate] [portname].");
@@ -728,6 +742,9 @@ int main(int argc, char *argv[])
 					break;
 				case 'w':
 					parseSettings(receiver.WAV(), argv, ptr, argc);
+					break;
+				case 'R':
+					parseSettings(receiver.NMEAFile(), argv, ptr, argc);
 					break;
 				case 't':
 					parseSettings(receiver.RTLTCP(), argv, ptr, argc);

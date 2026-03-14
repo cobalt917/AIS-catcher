@@ -440,6 +440,8 @@ namespace Util
 			return "SPYSERVER";
 		case Type::N2K:
 			return "NMEA2000";
+		case Type::NMEAFILE:
+			return "NMEAFILE";
 		default:
 			return "";
 		}

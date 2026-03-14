@@ -16,9 +16,14 @@
 */
 
 #include <cstring>
+#include <ctime>
+#include <sstream>
+#include <vector>
 
 #include "MsgOut.h"
 #include "Receiver.h"
+#include "DB.h"
+#include "ETA.h"
 
 namespace IO
 {
@@ -180,5 +185,170 @@ namespace IO
 				std::cout << json << std::endl;
 			}
 		}
+	}
+
+	void ETAScreen::Start()
+	{
+		if (running) return;
+		running = true;
+		display_thread = std::thread(&ETAScreen::displayLoop, this);
+	}
+
+	void ETAScreen::Stop()
+	{
+		if (!running) return;
+		running = false;
+		if (display_thread.joinable())
+			display_thread.join();
+	}
+
+	void ETAScreen::displayLoop()
+	{
+		while (running)
+		{
+			display();
+			for (int i = 0; i < refresh_interval * 10 && running; i++)
+			{
+				SleepSystem(100);
+			}
+		}
+	}
+
+	void ETAScreen::display()
+	{
+		if (!db) return;
+
+		std::vector<ETAInfo> approaching;
+
+		{
+			std::lock_guard<std::mutex> lock(db->mtx);
+
+			const auto &ships = db->getShips();
+			int idx = db->getFirst();
+
+			while (idx != -1)
+			{
+				const Ship &ship = ships[idx];
+
+				if (ship.lat != LAT_UNDEFINED && ship.lon != LON_UNDEFINED)
+				{
+					ETAInfo info = ETACalculator::calculate(ship, station_lat, station_lon);
+
+					if (info.is_approaching && info.cpa_distance <= cpa_threshold && info.eta_minutes > 0)
+					{
+						approaching.push_back(info);
+					}
+				}
+
+				idx = ship.next;
+			}
+		}
+
+		// Sort by ETA (soonest first)
+		std::sort(approaching.begin(), approaching.end(),
+				  [](const ETAInfo &a, const ETAInfo &b)
+				  { return a.eta_minutes < b.eta_minutes; });
+
+		// Clear screen and display
+		std::cout << "\033[2J\033[H";  // ANSI clear screen and move cursor to top
+
+		std::cout << "============================================" << std::endl;
+		std::cout << " APPROACHING SHIPS - ETA to Station" << std::endl;
+
+		// Format station location
+		char lat_dir = station_lat >= 0 ? 'N' : 'S';
+		char lon_dir = station_lon >= 0 ? 'E' : 'W';
+		std::cout << " Location: " << std::fixed << std::setprecision(4)
+				  << std::abs(station_lat) << " " << lat_dir << ", "
+				  << std::abs(station_lon) << " " << lon_dir << std::endl;
+
+		// Current time
+		std::time_t now = std::time(nullptr);
+		std::tm *tm = std::localtime(&now);
+		char time_buf[32];
+		std::strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tm);
+		std::cout << " Updated: " << time_buf << " | CPA Threshold: "
+				  << std::setprecision(1) << cpa_threshold << " NM" << std::endl;
+		std::cout << "============================================" << std::endl;
+
+		if (approaching.empty())
+		{
+			std::cout << std::endl;
+			std::cout << "No ships approaching within " << cpa_threshold << " NM" << std::endl;
+		}
+		else
+		{
+			std::cout << std::left
+					  << std::setw(21) << "NAME"
+					  << std::setw(12) << "MMSI"
+					  << std::setw(12) << "DIR"
+					  << std::setw(8) << "ETA"
+					  << std::setw(8) << "DIST" << std::endl;
+			std::cout << "--------------------------------------------" << std::endl;
+
+			for (const auto &info : approaching)
+			{
+				std::string name = info.name;
+				if (name.empty() || name[0] == '\0')
+					name = "Unknown";
+				if (name.length() > 20)
+					name = name.substr(0, 20);
+
+				int eta_min = (int)info.eta_minutes;
+				std::string eta_str;
+				if (eta_min >= 60)
+				{
+					int hours = eta_min / 60;
+					int mins = eta_min % 60;
+					eta_str = std::to_string(hours) + "h" + std::to_string(mins) + "m";
+				}
+				else
+				{
+					eta_str = std::to_string(eta_min) + "min";
+				}
+
+				std::ostringstream dist_ss;
+				dist_ss << std::fixed << std::setprecision(1) << info.current_distance << "nm";
+
+				std::cout << std::left
+						  << std::setw(21) << name
+						  << std::setw(12) << info.mmsi
+						  << std::setw(12) << info.direction
+						  << std::setw(8) << eta_str
+						  << std::setw(8) << dist_ss.str() << std::endl;
+			}
+			std::cout << "--------------------------------------------" << std::endl;
+			std::cout << approaching.size() << " ship(s) approaching" << std::endl;
+		}
+
+		std::cout << std::endl;
+	}
+
+	Setting &ETAScreen::Set(std::string option, std::string arg)
+	{
+		Util::Convert::toUpper(option);
+
+		if (option == "CPA")
+		{
+			cpa_threshold = Util::Parse::Float(arg, 0.1f, 100.0f);
+		}
+		else if (option == "REFRESH")
+		{
+			refresh_interval = Util::Parse::Integer(arg, 1, 3600);
+		}
+		else if (option == "LAT")
+		{
+			station_lat = Util::Parse::Float(arg, -90.0f, 90.0f);
+		}
+		else if (option == "LON")
+		{
+			station_lon = Util::Parse::Float(arg, -180.0f, 180.0f);
+		}
+		else
+		{
+			throw std::runtime_error("ETA output - unknown option: " + option);
+		}
+
+		return *this;
 	}
 }

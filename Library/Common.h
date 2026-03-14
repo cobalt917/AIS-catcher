@@ -105,7 +105,8 @@ enum class Type
 	SOAPYSDR = 11,
 	ZMQ = 12,
 	SPYSERVER = 13,
-	N2K = 14
+	N2K = 14,
+	NMEAFILE = 15
 };
 
 enum class MessageFormat
@@ -120,7 +121,8 @@ enum class MessageFormat
 	JSON_NMEA,
 	JSON_SPARSE,
 	JSON_FULL,
-	JSON_ANNOTATED
+	JSON_ANNOTATED,
+	ETA_SCREEN
 };
 
 enum ShippingClass

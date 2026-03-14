@@ -139,6 +139,8 @@ Device::Device *Receiver::getDeviceByType(Type type)
 		return &_SerialPort;
 	case Type::UDP:
 		return &_UDP;
+	case Type::NMEAFILE:
+		return &_NMEAFile;
 #ifdef HASNMEA2000
 	case Type::N2K:
 		return &_N2KSCAN;
@@ -391,7 +393,7 @@ void Receiver::stop()
 
 void OutputScreen::setScreen(const std::string &str)
 {
-	switch (Util::Parse::Integer(str, 0, 6))
+	switch (Util::Parse::Integer(str, 0, 7))
 	{
 	case 0:
 		level = MessageFormat::SILENT;
@@ -413,6 +415,9 @@ void OutputScreen::setScreen(const std::string &str)
 		break;
 	case 6:
 		level = MessageFormat::JSON_ANNOTATED;
+		break;
+	case 7:
+		level = MessageFormat::ETA_SCREEN;
 		break;
 	default:
 		throw std::runtime_error("unknown option for screen output: " + str);
@@ -453,15 +458,57 @@ void OutputScreen::connect(Receiver &r)
 				r.OutputGPS(j).Connect((StreamIn<AIS::GPS> *)&json2screen);
 		}
 
-		if (level == MessageFormat::JSON_SPARSE) 
+		if (level == MessageFormat::JSON_SPARSE)
 			json2screen.setMap(JSON_DICT_SPARSE);
-			
+
 		if (level == MessageFormat::JSON_ANNOTATED)
 			json2screen.setAnnotation(true);
 	}
+	else if (level == MessageFormat::ETA_SCREEN)
+	{
+		// Create and set up the ETA database
+		if (!eta_db)
+		{
+			eta_db = std::unique_ptr<DB>(new DB());
+			eta_db->setup();
+			eta_screen.setDB(eta_db.get());
+		}
+
+		// Connect the DB to receive JSON data from all receivers
+		for (int j = 0; j < r.Count(); j++)
+		{
+			r.OutputJSON(j).Connect((StreamIn<JSON::JSON> *)eta_db.get());
+			r.OutputGPS(j).Connect((StreamIn<AIS::GPS> *)eta_db.get());
+		}
+	}
 }
 
-void OutputScreen::start() {}
+void OutputScreen::start()
+{
+	if (level == MessageFormat::ETA_SCREEN)
+	{
+		eta_screen.Start();
+	}
+}
+
+void OutputScreen::stop()
+{
+	if (level == MessageFormat::ETA_SCREEN)
+	{
+		eta_screen.Stop();
+	}
+}
+
+DB* OutputScreen::getETADB()
+{
+	if (!eta_db)
+	{
+		eta_db = std::unique_ptr<DB>(new DB());
+		eta_db->setup();
+		eta_screen.setDB(eta_db.get());
+	}
+	return eta_db.get();
+}
 //-----------------------------------
 // set up screen counters
 

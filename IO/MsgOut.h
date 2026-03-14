@@ -19,6 +19,9 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <thread>
+#include <atomic>
+#include <algorithm>
 
 #include "Common.h"
 #include "Stream.h"
@@ -30,6 +33,7 @@
 #include "JSON/StringBuilder.h"
 
 class Receiver;
+class DB;
 
 namespace IO
 {
@@ -349,5 +353,41 @@ namespace IO
 			}
 			return *this;
 		}
+	};
+
+	class ETAScreen : public Setting
+	{
+		DB *db = nullptr;
+		float station_lat = 42.372498f;
+		float station_lon = -82.918296f;
+		float cpa_threshold = 2.0f;
+		int refresh_interval = 10;
+
+		std::thread display_thread;
+		std::atomic<bool> running{false};
+
+		void displayLoop();
+		void display();
+
+	public:
+		ETAScreen() {}
+		~ETAScreen() { Stop(); }
+
+		void setDB(DB *database) { db = database; }
+		void setStation(float lat, float lon)
+		{
+			station_lat = lat;
+			station_lon = lon;
+		}
+		void setCPAThreshold(float threshold) { cpa_threshold = threshold; }
+		void setRefreshInterval(int seconds) { refresh_interval = seconds; }
+
+		float getStationLat() const { return station_lat; }
+		float getStationLon() const { return station_lon; }
+
+		void Start();
+		void Stop();
+
+		Setting &Set(std::string option, std::string arg);
 	};
 }
