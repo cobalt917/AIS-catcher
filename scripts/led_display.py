@@ -7,19 +7,28 @@ Each row shows direction arrow, ETA, and ship name (scrolls if wider than panel)
 
 Run on the Raspberry Pi:
   python3 led_display.py
+  python3 led_display.py --server http://elberta:8080
 
 Test in the terminal (use a wide window — 128 px = 256 terminal chars):
   python3 led_display.py --sim
+  python3 led_display.py --sim --server http://elberta:8080
+  python3 led_display.py --sim --sample          # use hardcoded prototype data
   python3 led_display.py --sim --color green
   python3 led_display.py --sim --scroll-speed 2 --page-time 4
 
 If the rgbmatrix library is not installed, --sim is enabled automatically.
+Live data is fetched from the AIS-catcher web API (/api/ships.json) and ETA/CPA
+is computed locally using the same vector math as the C++ ETACalculator.
 """
 
 import argparse
+import json
+import math
 import os
 import sys
+import threading
 import time
+import urllib.request
 
 # ---------------------------------------------------------------------------
 # Display geometry
@@ -234,6 +243,154 @@ SAMPLE_SHIPS = [
 ]
 
 # ---------------------------------------------------------------------------
+# Live data — ETA/CPA computation and background fetch
+# ---------------------------------------------------------------------------
+
+# Observer defaults (Detroit River, ~42.37 N / -82.92 W)
+DEFAULT_SERVER        = "http://elberta:8080"
+DEFAULT_STATION_LAT   = 42.372498
+DEFAULT_STATION_LON   = -82.918296
+DEFAULT_CPA_NM        = 2.0    # nautical mile threshold
+DEFAULT_FETCH_INTERVAL = 30    # seconds between server polls
+DEFAULT_MAX_AGE_SEC   = 300    # exclude ships last seen more than this many seconds ago
+
+
+def _cpa_direction(cog_deg):
+    """UP (northerly COG) or DOWN (southerly COG). cos(COG)>=0 → north."""
+    return "UP" if math.cos(math.radians(cog_deg)) >= 0 else "DOWN"
+
+
+def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
+    """
+    Compute ETA dict for one ship, or None if it should be excluded.
+    Uses the same CPA vector math as ETACalculator.cpp.
+    """
+    try:
+        lat   = ship_json.get("lat")
+        lon   = ship_json.get("lon")
+        speed = ship_json.get("speed")
+        cog   = ship_json.get("cog")
+
+        if lat is None or lon is None:
+            return None
+
+        # Local NM offsets (ship relative to station)
+        dlat = (lat - station_lat) * 60.0
+        dlon = (lon - station_lon) * 60.0 * math.cos(math.radians(station_lat))
+
+        if speed is None or speed <= 0 or cog is None or cog >= 360:
+            return None  # stationary / no course data
+
+        # Velocity vector (knots = NM/hour)
+        vx = speed * math.sin(math.radians(cog))   # east component
+        vy = speed * math.cos(math.radians(cog))   # north component
+
+        v_sq = vx * vx + vy * vy
+        if v_sq < 1e-4:
+            return None
+
+        # Time to CPA (hours): t = -(P·V) / |V|²
+        tcpa_h = -(dlon * vx + dlat * vy) / v_sq
+        if tcpa_h <= 0:
+            return None  # moving away
+
+        # CPA distance
+        cpa_x = dlon + vx * tcpa_h
+        cpa_y = dlat + vy * tcpa_h
+        cpa_nm = math.sqrt(cpa_x * cpa_x + cpa_y * cpa_y)
+
+        if cpa_nm > cpa_threshold_nm:
+            return None  # won't come close enough
+
+        eta_min   = tcpa_h * 60.0
+        direction = _cpa_direction(cog)
+        raw_name  = (ship_json.get("shipname") or "").strip()
+        name      = raw_name if raw_name else f"MMSI {ship_json.get('mmsi', '?')}"
+        country   = (ship_json.get("country") or "").strip().upper()
+        flag      = country if country in FLAGS else ""
+
+        return {
+            "direction": direction,
+            "eta_min":   round(eta_min),
+            "flag":      flag,
+            "name":      name,
+            "_eta_f":    eta_min,   # float for sorting
+        }
+    except Exception:
+        return None
+
+
+def fetch_ships(server_url, station_lat, station_lon, cpa_nm, max_age_sec):
+    """
+    Fetch /api/ships.json from the AIS-catcher server, compute CPA/ETA for each
+    ship, filter to approaching ships within cpa_nm, sort by ETA ascending.
+    Returns a list of ship dicts, or None on network/parse error.
+    """
+    try:
+        url = server_url.rstrip("/") + "/api/ships.json"
+        req = urllib.request.urlopen(url, timeout=10)
+        data = json.loads(req.read().decode())
+    except Exception:
+        return None
+
+    results = []
+    for ship in data.get("ships", []):
+        if (ship.get("last_signal") or 9999) > max_age_sec:
+            continue
+        entry = _compute_eta(ship, station_lat, station_lon, cpa_nm)
+        if entry is not None:
+            results.append(entry)
+
+    results.sort(key=lambda s: s["_eta_f"])
+    return results
+
+
+class ShipFetcher:
+    """Background thread that polls the AIS-catcher server periodically."""
+
+    def __init__(self, server_url, station_lat, station_lon, cpa_nm,
+                 fetch_interval, max_age_sec):
+        self._url          = server_url
+        self._lat          = station_lat
+        self._lon          = station_lon
+        self._cpa          = cpa_nm
+        self._interval     = fetch_interval
+        self._max_age      = max_age_sec
+        self._ships        = []
+        self._fetch_failed = False   # True if the most recent fetch failed
+        self._lock         = threading.Lock()
+        self._stop         = threading.Event()
+        self._ok           = False   # True after at least one successful fetch
+
+    def start(self):
+        """Initial blocking fetch, then kick off background thread."""
+        self._do_fetch()
+        t = threading.Thread(target=self._run, daemon=True)
+        t.start()
+
+    def _do_fetch(self):
+        result = fetch_ships(self._url, self._lat, self._lon, self._cpa, self._max_age)
+        with self._lock:
+            if result is not None:
+                self._ships        = result
+                self._fetch_failed = False
+                self._ok           = True
+            else:
+                self._fetch_failed = True
+
+    def _run(self):
+        while not self._stop.wait(self._interval):
+            self._do_fetch()
+
+    def get_status(self):
+        """Return (ships, fetch_failed) atomically."""
+        with self._lock:
+            return list(self._ships), self._fetch_failed
+
+    def stop(self):
+        self._stop.set()
+
+# ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
 
@@ -371,6 +528,22 @@ def advance_scrolls(ships, h_offsets, scroll_speed):
             h_offsets[i] = (h_offsets[i] + scroll_speed) % (strip_w + SCROLL_GAP)
 
 
+def render_status_frame(text):
+    """
+    Render a single line of text centered on the display.
+    Used for 'No incoming ships' and server error states.
+    """
+    frame = [[FC_OFF] * DISPLAY_COLS for _ in range(DISPLAY_ROWS)]
+    strip = render_strip(text)
+    strip_w = len(strip[0])
+    x0 = max(0, (DISPLAY_COLS - strip_w) // 2)
+    y0 = (DISPLAY_ROWS - FONT_H) // 2
+    for ri in range(FONT_H):
+        for ci in range(min(strip_w, DISPLAY_COLS - x0)):
+            frame[y0 + ri][x0 + ci] = strip[ri][ci]
+    return frame
+
+
 # ---------------------------------------------------------------------------
 # LED matrix output
 # ---------------------------------------------------------------------------
@@ -442,38 +615,69 @@ def frame_to_terminal(frame, color_name, force_truecolor=False):
 # Animation loop
 # ---------------------------------------------------------------------------
 
-def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor):
+def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
+        fetcher=None):
+    """
+    Animation loop.
+
+    ships   — initial ship list (used as-is when fetcher is None / --sample)
+    fetcher — ShipFetcher instance; if set, ships are refreshed at each page turn
+    """
     led_rgb   = LED_COLORS.get(color, LED_COLORS["amber"])
     h_offsets = {i: 0 for i in range(len(ships))}
     v_offset  = 0
     last_page = time.time()
+    data_src  = "sample" if fetcher is None else "live"
+
+    # fetch_failed is always False in --sample mode
+    fetch_failed = False
+
+    def _refresh(current_ships, current_failed):
+        """Pull fresh state from fetcher; reset scroll state when ship list changes."""
+        nonlocal h_offsets, v_offset
+        if fetcher is None:
+            return current_ships, False
+        new_ships, new_failed = fetcher.get_status()
+        if [s["name"] for s in new_ships] != [s["name"] for s in current_ships]:
+            h_offsets = {i: 0 for i in range(len(new_ships))}
+            v_offset  = 0
+        return new_ships, new_failed
+
+    def _build_frame(current_ships, current_failed):
+        """Return the appropriate frame for the current display state."""
+        if current_failed:
+            return render_status_frame("Server error")
+        if not current_ships:
+            return render_status_frame("No incoming ships")
+        return render_frame(current_ships, v_offset, h_offsets)
 
     if use_sim:
-        # Warm up the strip cache before starting animation
         for s in ships:
             get_name_strip(s["name"])
 
+        print("\033[?25l", end="", flush=True)  # hide cursor
         n = len(ships)
-        print(f"\033[?25l", end="", flush=True)  # hide cursor
-        print(f"  {n} ships | ◀=UP  ▶=DOWN | display: {DISPLAY_ROWS}×{DISPLAY_COLS}px "
+        print(f"  {n} ships [{data_src}] | ◀=UP  ▶=DOWN | "
+              f"display: {DISPLAY_ROWS}×{DISPLAY_COLS}px "
               f"(terminal width needed: {DISPLAY_COLS * 2} chars) | Ctrl+C to exit")
         first = True
         try:
             while True:
-                frame  = render_frame(ships, v_offset, h_offsets)
+                frame  = _build_frame(ships, fetch_failed)
                 output = frame_to_terminal(frame, color, force_truecolor=truecolor)
 
                 if first:
                     print(output, flush=True)
                     first = False
                 else:
-                    # Overwrite previous frame in-place (no flicker)
                     print(f"\033[{DISPLAY_ROWS}A" + output, flush=True)
 
                 advance_scrolls(ships, h_offsets, scroll_speed)
 
                 now = time.time()
                 if now - last_page >= page_time:
+                    ships, fetch_failed = _refresh(ships, fetch_failed)
+                    n = len(ships)
                     v_offset = (v_offset + 1) % max(1, n)
                     last_page = now
 
@@ -489,7 +693,7 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor):
         canvas = matrix.CreateFrameCanvas()
         try:
             while True:
-                frame = render_frame(ships, v_offset, h_offsets)
+                frame = _build_frame(ships, fetch_failed)
                 canvas.Clear()
                 write_frame_to_canvas(canvas, frame, led_rgb)
                 canvas = matrix.SwapOnVSync(canvas)
@@ -498,6 +702,7 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor):
 
                 now = time.time()
                 if now - last_page >= page_time:
+                    ships, fetch_failed = _refresh(ships, fetch_failed)
                     v_offset = (v_offset + 1) % max(1, len(ships))
                     last_page = now
 
@@ -513,20 +718,49 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LED display driver for ship tracker (prototype with sample data)",
+        description="LED display driver for ship tracker",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  %(prog)s --sim                            terminal preview on any machine
-  %(prog)s --sim --color green              different LED color
-  %(prog)s --sim --scroll-speed 2           faster scrolling
-  %(prog)s --sim --page-time 3              rotate ships faster
-  %(prog)s                                  real LED matrix (Pi only)
+  %(prog)s --sim                                  terminal preview, live data from default server
+  %(prog)s --sim --server http://elberta:8080     explicit server URL
+  %(prog)s --sim --sample                         use hardcoded prototype data
+  %(prog)s --sim --color green                    different LED color
+  %(prog)s --sim --cpa 5.0                        wider CPA filter (5 NM)
+  %(prog)s                                        real LED matrix (Pi only)
 """,
     )
     parser.add_argument(
         "--sim", action="store_true",
         help="render to terminal instead of real LED matrix",
+    )
+    parser.add_argument(
+        "--sample", action="store_true",
+        help="use hardcoded SAMPLE_SHIPS instead of fetching live data",
+    )
+    parser.add_argument(
+        "--server", default=DEFAULT_SERVER, metavar="URL",
+        help=f"AIS-catcher server URL (default: {DEFAULT_SERVER})",
+    )
+    parser.add_argument(
+        "--lat", type=float, default=DEFAULT_STATION_LAT, metavar="DEG",
+        help=f"observer latitude in decimal degrees (default: {DEFAULT_STATION_LAT})",
+    )
+    parser.add_argument(
+        "--lon", type=float, default=DEFAULT_STATION_LON, metavar="DEG",
+        help=f"observer longitude in decimal degrees (default: {DEFAULT_STATION_LON})",
+    )
+    parser.add_argument(
+        "--cpa", type=float, default=DEFAULT_CPA_NM, metavar="NM",
+        help=f"CPA threshold in nautical miles (default: {DEFAULT_CPA_NM})",
+    )
+    parser.add_argument(
+        "--fetch-interval", type=int, default=DEFAULT_FETCH_INTERVAL, metavar="SEC",
+        help=f"seconds between server polls (default: {DEFAULT_FETCH_INTERVAL})",
+    )
+    parser.add_argument(
+        "--max-age", type=int, default=DEFAULT_MAX_AGE_SEC, metavar="SEC",
+        help=f"exclude ships last heard more than this many seconds ago (default: {DEFAULT_MAX_AGE_SEC})",
     )
     parser.add_argument(
         "--color", default="amber", choices=sorted(LED_COLORS),
@@ -558,14 +792,34 @@ examples:
             print("rgbmatrix not available — switching to --sim mode", file=sys.stderr)
             use_sim = True
 
+    if args.sample:
+        fetcher       = None
+        initial_ships = SAMPLE_SHIPS
+    else:
+        print(f"Connecting to {args.server} …", file=sys.stderr)
+        fetcher = ShipFetcher(
+            server_url     = args.server,
+            station_lat    = args.lat,
+            station_lon    = args.lon,
+            cpa_nm         = args.cpa,
+            fetch_interval = args.fetch_interval,
+            max_age_sec    = args.max_age,
+        )
+        fetcher.start()
+        initial_ships, _ = fetcher.get_status()
+        if not fetcher._ok:
+            print(f"Warning: could not reach {args.server} — display will be blank until data arrives",
+                  file=sys.stderr)
+
     run(
-        SAMPLE_SHIPS,
+        initial_ships,
         args.color,
         args.scroll_speed,
         args.page_time,
         args.tick_ms,
         use_sim,
         args.truecolor,
+        fetcher=fetcher,
     )
 
 

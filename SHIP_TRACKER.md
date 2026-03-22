@@ -186,25 +186,45 @@ New flags can be added to the `FLAGS` dict in the script.
 
 ## LED Display Driver (`scripts/led_display.py`)
 
-Animates the two 32×64 panels with approaching ship data.
-Currently uses hardcoded prototype data (`SAMPLE_SHIPS`); live AIS feed not yet wired up.
+Animates the two 32×64 panels with approaching ship data fetched live from AIS-catcher.
+Falls back to `--sample` (hardcoded `SAMPLE_SHIPS`) for offline testing.
+
+**Live data source:** `/api/ships.json` on the AIS-catcher web server (elberta:8080).
+ETA/CPA math runs in Python using the same vector math as `ETACalculator.cpp`.
+Direction: `cos(COG) >= 0` → UP (northerly), else DOWN (southerly).
+
+**Status messages (centered on display):**
+- `"No incoming ships"` — server reachable but no ships pass the CPA filter
+- `"Server error"` — most recent fetch failed (network down, server not running, etc.)
+- Blank screen — Pi itself has crashed or the script is not running
 
 **Usage:**
 ```bash
-# Terminal preview (any machine — auto-enabled if rgbmatrix not installed)
+# Terminal preview — live data (any machine)
 python3 scripts/led_display.py --sim
-python3 scripts/led_display.py --sim --color green --scroll-speed 2 --page-time 3
+python3 scripts/led_display.py --sim --server http://elberta:8080
+
+# Terminal preview — prototype data
+python3 scripts/led_display.py --sim --sample
 
 # Real LED matrix (Pi only)
 python3 scripts/led_display.py
+python3 scripts/led_display.py --server http://elberta:8080
 ```
 
 > Terminal is 256 chars wide for a 128 px panel — use a wide window or small font.
 
-**Options:**
+**All options:**
 | Option | Description | Default |
 |---|---|---|
 | `--sim` | Render to terminal instead of real matrix | off |
+| `--sample` | Use hardcoded SAMPLE_SHIPS instead of live data | off |
+| `--server URL` | AIS-catcher base URL | `http://elberta:8080` |
+| `--lat DEG` | Observer latitude | 42.372498 |
+| `--lon DEG` | Observer longitude | -82.918296 |
+| `--cpa NM` | CPA threshold in nautical miles | 2.0 |
+| `--fetch-interval SEC` | Seconds between server polls | 30 |
+| `--max-age SEC` | Exclude ships last heard > N sec ago | 300 |
 | `--color` | LED color: amber/red/green/blue/white/yellow/cyan | amber |
 | `--scroll-speed PX` | Pixels to advance per tick for scrolling names | 1 |
 | `--page-time SEC` | Seconds between vertical ship rotation | 5.0 |
@@ -234,5 +254,5 @@ python3 scripts/led_display.py
 ```
 
 **Still to do:**
-- Wire up live data from AIS-catcher (web API or JSON output)
 - Font size options for fitting more ships on screen simultaneously
+- Direction tolerance tuning (currently pure north/south hemisphere split on COG)
