@@ -383,7 +383,7 @@ def create_matrix():
     opts.chain_length = 2
     opts.parallel = 1
     opts.hardware_mapping = "regular-pi1"
-    opts.slowdown_gpio = 2
+#    opts.slowdown_gpio = 2
     opts.brightness = 80
     return RGBMatrix(options=opts)
 

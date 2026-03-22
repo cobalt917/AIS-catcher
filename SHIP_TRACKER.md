@@ -118,6 +118,15 @@ Library: [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) by 
 
 **Installed on the Raspberry Pi** (not the Debian server).
 
+**Installing the Python bindings** (needed for `led_display.py`):
+```bash
+sudo apt install python3-pip python3-dev cython3
+cd ~/rpi-rgb-led-matrix
+sudo pip3 install . --break-system-packages
+```
+Note: compiling Cython on Pi 1 takes 5–10 minutes. The `--break-system-packages` flag
+is required on newer Raspberry Pi OS (Bookworm) due to PEP 668.
+
 **Key flags for this hardware:**
 ```bash
 --led-gpio-mapping=regular-pi1   # required — default mapping missing on 26-pin Pi
