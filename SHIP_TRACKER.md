@@ -193,9 +193,9 @@ Falls back to `--sample` (hardcoded `SAMPLE_SHIPS`) for offline testing.
 ETA/CPA math runs in Python using the same vector math as `ETACalculator.cpp`.
 Direction: `cos(COG) >= 0` → UP (northerly), else DOWN (southerly).
 
-**Status messages (centered on display):**
-- `"No incoming ships"` — server reachable but no ships pass the CPA filter
-- `"Server error"` — most recent fetch failed (network down, server not running, etc.)
+**Display states:**
+- Wave image — server reachable but no ships pass the CPA filter; navy-blue water body + white foam caps (uses flag colour pipeline, not the LED colour)
+- `"Server error"` (centred text) — most recent fetch failed (network down, server not running, etc.)
 - Blank screen — Pi itself has crashed or the script is not running
 
 **Usage:**

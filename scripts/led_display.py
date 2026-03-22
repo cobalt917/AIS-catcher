@@ -531,7 +531,7 @@ def advance_scrolls(ships, h_offsets, scroll_speed):
 def render_status_frame(text):
     """
     Render a single line of text centered on the display.
-    Used for 'No incoming ships' and server error states.
+    Used for server error states.
     """
     frame = [[FC_OFF] * DISPLAY_COLS for _ in range(DISPLAY_ROWS)]
     strip = render_strip(text)
@@ -541,6 +541,28 @@ def render_status_frame(text):
     for ri in range(FONT_H):
         for ci in range(min(strip_w, DISPLAY_COLS - x0)):
             frame[y0 + ri][x0 + ci] = strip[ri][ci]
+    return frame
+
+
+def render_wave_frame():
+    """
+    Render a wave silhouette for the 'no incoming ships' idle state.
+    Two sine-wave crests fill the display; a small cap pixel above each
+    crest tip gives a slight foam/spray look.
+    """
+    frame = [[FC_OFF] * DISPLAY_COLS for _ in range(DISPLAY_ROWS)]
+    for x in range(DISPLAY_COLS):
+        angle   = 2 * math.pi * x / 64.0
+        surface = 16 + round(8 * math.sin(angle))
+        surface = max(2, min(DISPLAY_ROWS - 1, surface))
+        # Water body (blue)
+        for y in range(surface, DISPLAY_ROWS):
+            frame[y][x] = FC_BLUE
+        # Crest caps (white foam)
+        if surface <= 13:
+            frame[surface - 1][x] = FC_WHITE
+        if surface <= 10:
+            frame[surface - 2][x] = FC_WHITE
     return frame
 
 
@@ -648,7 +670,7 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
         if current_failed:
             return render_status_frame("Server error")
         if not current_ships:
-            return render_status_frame("No incoming ships")
+            return render_wave_frame()
         return render_frame(current_ships, v_offset, h_offsets)
 
     if use_sim:
