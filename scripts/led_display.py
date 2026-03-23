@@ -71,6 +71,7 @@ FC_BLUE   = 4
 FC_YELLOW = 5
 FC_BLACK  = 6
 FC_GREEN  = 7
+FC_GREY   = 8
 
 FLAG_RGB = {
     FC_RED:    (205,  32,  44),
@@ -79,6 +80,7 @@ FLAG_RGB = {
     FC_YELLOW: (255, 185,   0),
     FC_BLACK:  ( 20,  20,  20),
     FC_GREEN:  (  0, 150,   0),
+    FC_GREY:   (130, 130, 130),
 }
 
 LED_COLORS = {
@@ -103,7 +105,7 @@ LED_COLORS_256 = {
 }
 
 FLAG_COLORS_256 = {FC_RED: 160, FC_WHITE: 231, FC_BLUE: 19,
-                   FC_YELLOW: 226, FC_BLACK: 232, FC_GREEN: 34}
+                   FC_YELLOW: 226, FC_BLACK: 232, FC_GREEN: 34, FC_GREY: 244}
 
 RESET = "\033[0m"
 
@@ -216,14 +218,15 @@ UNKNOWN_CHAR = ["11111","10001","10001","10001","10001","10001","11111"]
 # ---------------------------------------------------------------------------
 # Flag bitmaps  (copied from led_sim.py)
 # ---------------------------------------------------------------------------
-_R = FC_RED
-_W = FC_WHITE
-_B = FC_BLUE
-_Y = FC_YELLOW
-_K = FC_BLACK
-_G = FC_GREEN
-_L = FC_LED
-_O = FC_OFF
+_R  = FC_RED
+_W  = FC_WHITE
+_B  = FC_BLUE
+_Y  = FC_YELLOW
+_K  = FC_BLACK
+_G  = FC_GREEN
+_GY = FC_GREY
+_L  = FC_LED
+_O  = FC_OFF
 
 FLAGS = {
     # United States — blue canton + red/white stripes
@@ -403,15 +406,15 @@ FLAGS = {
 # AIS nav status codes: 0=underway engine, 1=at anchor, 6=aground, 15=undefined
 # ---------------------------------------------------------------------------
 NAV_STATUS_ICON = {
-    # At anchor — anchor silhouette in LED colour
+    # At anchor — ⚓-shaped silhouette in grey (shaft visible through ring centre)
     1: [
-        [_O,_L,_L,_L,_O],   # ring arc
-        [_L,_O,_O,_O,_L],   # ring sides
-        [_O,_O,_L,_O,_O],   # shaft above stock
-        [_L,_L,_L,_L,_L],   # stock (crossbar)
-        [_O,_O,_L,_O,_O],   # shaft below stock
-        [_O,_L,_O,_L,_O],   # flukes
-        [_L,_O,_O,_O,_L],   # fluke tips
+        [_O, _GY,_GY,_GY,_O ],   # ring top arc
+        [_GY,_O, _GY,_O, _GY],   # ring sides + shaft through centre
+        [_GY,_GY,_GY,_GY,_GY],   # ring bottom / stock
+        [_O, _O, _GY,_O, _O ],   # shaft
+        [_O, _O, _GY,_O, _O ],   # shaft
+        [_O, _GY,_O, _GY,_O ],   # two fluke arms
+        [_GY,_O, _O, _O, _GY],   # fluke ends
     ],
     # Aground — red X
     6: [

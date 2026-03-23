@@ -72,6 +72,7 @@ FC_BLUE   = 4
 FC_YELLOW = 5
 FC_BLACK  = 6
 FC_GREEN  = 7
+FC_GREY   = 8
 
 # 24-bit (R,G,B) for each flag color code
 FLAG_COLORS_24BIT = {
@@ -81,6 +82,7 @@ FLAG_COLORS_24BIT = {
     FC_YELLOW: (255, 185,   0),
     FC_BLACK:  ( 20,  20,  20),
     FC_GREEN:  (  0, 150,   0),
+    FC_GREY:   (130, 130, 130),
 }
 
 # 256-color terminal index for each flag color code
@@ -92,6 +94,7 @@ FLAG_COLORS_256 = {
     FC_YELLOW: 226,
     FC_BLACK:  232,
     FC_GREEN:   34,
+    FC_GREY:   244,
 }
 
 # Short aliases used in the bitmap definitions below
