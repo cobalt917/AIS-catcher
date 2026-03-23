@@ -233,11 +233,11 @@ python3 scripts/led_display.py --server http://elberta:8080
 
 **Display layout (per row, 32×128 px total):**
 ```
-[◀  4m][CA flag] ALGONOVA
-[▶ 22m][CA flag] ALGOMA MARINER scrolls...
+[◀ 4m][CA flag] ALGONOVA
+[▶22m][CA flag] ALGOMA MARINER scrolls...
 ```
-- **Fixed zone (51 px):** direction arrow + right-justified ETA (35 px) + flag bitmap (14 px)
-- **Scrolling zone (77 px):** ship name only — scrolls if wider than 77 px, static otherwise
+- **Fixed zone (45 px):** arrow + ETA (23 px) · flag (14 px) · status icon (5 px) · each separated by 1 px gap
+- **Scrolling zone (83 px):** ship name only — scrolls if wider than 83 px, static otherwise
 - **Direction:** `◀` = upstream (UP), `▶` = downstream (DOWN)
 - **Vertical cycling:** 3 ships visible at once; rotates by 1 every `--page-time` seconds
 
@@ -256,3 +256,7 @@ python3 scripts/led_display.py --server http://elberta:8080
 **Still to do:**
 - Font size options for fitting more ships on screen simultaneously
 - Direction tolerance tuning (currently pure north/south hemisphere split on COG)
+- Time-of-day brightness dimming: reduce LED brightness at night/early morning for kitchen installation
+- ~~Flag coverage~~ **Done** — curated Great Lakes / St Lawrence Seaway subset: US CA NL FR DE MT LR PA BS NO DK SE FI GB BE IT (16 countries). Unknown MMSI country codes show a `?` icon; ships with no country field show a blank. New FC_ colour constants added: FC_YELLOW, FC_BLACK, FC_GREEN. Both `led_display.py` and `led_sim.py` updated identically. Preview any flag: `python3 scripts/led_sim.py "[NL] TEST" --size 32x128 --panel 32x64`
+- ~~Compress fixed zone layout~~ **Done** — fixed zone reduced from 51 px to 39 px; name zone expanded from 77 px to 89 px; ETA now 2-digit right-justified (`▶ 4m` / `▶22m`)
+- ~~AIS status icons~~ **Done** — 5×7 px static icons between flag and name: anchor glyph (FC_LED colour) for nav_status 1 (at anchor), red X (FC_RED) for nav_status 6 (aground); blank for all other states. API field: `status`. Two SAMPLE_SHIPS entries carry test values (ALGOMA MARINER=1, AMERICAN SPIRIT=6)

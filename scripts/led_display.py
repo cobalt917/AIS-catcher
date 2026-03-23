@@ -47,28 +47,38 @@ ROWS_PER_FRAME = 3   # ship rows visible at once on the 32-px panel
 _BLOCK_H  = ROWS_PER_FRAME * FONT_H + (ROWS_PER_FRAME - 1) * LINE_GAP  # 25 px
 Y_START   = (DISPLAY_ROWS - _BLOCK_H) // 2                              # 3 px
 
-# Horizontal split: fixed prefix (text + flag) | scrolling name
-# "▶  20m" = 6 chars = 35 px, then 1 px gap, then 14 px flag, then 1 px gap = 51 px total
-_PREFIX_TEXT_W = 35
+# Horizontal split: fixed prefix (arrow+ETA) | flag | status icon | scrolling name
+# "▶20m" = 4 chars = 23 px, +1 gap, +14 flag, +1 gap = 39 px (PREFIX_W / icon start)
+# +5 icon, +1 gap = 45 px (NAME_X) before scrolling name zone
+# ETA is right-justified in 2 digits (max useful range is 45 min, so 2 digits suffice)
+_PREFIX_TEXT_W = 23
 _FLAG_W        = 14
-FLAG_X    = _PREFIX_TEXT_W + 1        # 36 — column where the flag bitmap starts
-PREFIX_W  = FLAG_X + _FLAG_W + 1      # 51 — first column of the scrolling name zone
-NAME_W    = DISPLAY_COLS - PREFIX_W   # 77 px for ship name only
+FLAG_X    = _PREFIX_TEXT_W + 1        # 24 — column where the flag bitmap starts
+PREFIX_W  = FLAG_X + _FLAG_W + 1      # 39 — column where the status icon starts
+_ICON_W   = 5
+NAME_X    = PREFIX_W + _ICON_W + 1    # 45 — first column of the scrolling name zone
+NAME_W    = DISPLAY_COLS - NAME_X     # 83 px for ship name
 SCROLL_GAP = 16                       # dark px gap before a name repeats
 
 # ---------------------------------------------------------------------------
 # Color codes  (same scheme as led_sim.py)
 # ---------------------------------------------------------------------------
-FC_OFF   = 0
-FC_LED   = 1
-FC_RED   = 2
-FC_WHITE = 3
-FC_BLUE  = 4
+FC_OFF    = 0
+FC_LED    = 1
+FC_RED    = 2
+FC_WHITE  = 3
+FC_BLUE   = 4
+FC_YELLOW = 5
+FC_BLACK  = 6
+FC_GREEN  = 7
 
 FLAG_RGB = {
-    FC_RED:   (205,  32,  44),
-    FC_WHITE: (240, 240, 240),
-    FC_BLUE:  (  0,  40, 104),
+    FC_RED:    (205,  32,  44),
+    FC_WHITE:  (240, 240, 240),
+    FC_BLUE:   (  0,  40, 104),
+    FC_YELLOW: (255, 185,   0),
+    FC_BLACK:  ( 20,  20,  20),
+    FC_GREEN:  (  0, 150,   0),
 }
 
 LED_COLORS = {
@@ -92,7 +102,8 @@ LED_COLORS_256 = {
     "cyan":   ( 51,  23),
 }
 
-FLAG_COLORS_256 = {FC_RED: 160, FC_WHITE: 231, FC_BLUE: 19}
+FLAG_COLORS_256 = {FC_RED: 160, FC_WHITE: 231, FC_BLUE: 19,
+                   FC_YELLOW: 226, FC_BLACK: 232, FC_GREEN: 34}
 
 RESET = "\033[0m"
 
@@ -208,8 +219,14 @@ UNKNOWN_CHAR = ["11111","10001","10001","10001","10001","10001","11111"]
 _R = FC_RED
 _W = FC_WHITE
 _B = FC_BLUE
+_Y = FC_YELLOW
+_K = FC_BLACK
+_G = FC_GREEN
+_L = FC_LED
+_O = FC_OFF
 
 FLAGS = {
+    # United States — blue canton + red/white stripes
     "US": [
         [_B,_B,_B,_B,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
         [_B,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
@@ -219,6 +236,7 @@ FLAGS = {
         [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
         [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
     ],
+    # Canada — red bands + simplified maple-leaf centre
     "CA": [
         [_R,_R,_R,_W,_W,_W,_R,_R,_W,_W,_W,_R,_R,_R],
         [_R,_R,_R,_W,_R,_W,_R,_R,_W,_R,_W,_R,_R,_R],
@@ -228,6 +246,183 @@ FLAGS = {
         [_R,_R,_R,_W,_W,_W,_R,_R,_W,_W,_W,_R,_R,_R],
         [_R,_R,_R,_W,_W,_W,_R,_R,_W,_W,_W,_R,_R,_R],
     ],
+    # Netherlands — horizontal red / white / blue (2+3+2)
+    "NL": [
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # France — vertical blue / white / red (5+4+5)
+    "FR": [
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+    ],
+    # Germany — horizontal black / red / gold (2+3+2)
+    "DE": [
+        [_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K],
+        [_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+    ],
+    # Malta — vertical white / red split
+    "MT": [
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Liberia — blue canton (6×4) + red/white stripes (like a simplified US)
+    "LR": [
+        [_B,_B,_B,_B,_B,_B,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Panama — 4 quadrants: white/blue top, red/white bottom
+    "PA": [
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_R,_R,_R,_R,_R,_R,_R,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_W,_W,_W,_W,_W,_W,_W],
+    ],
+    # Bahamas — aquamarine(≈blue)/gold/aquamarine stripes + black left triangle
+    "BS": [
+        [_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_K,_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_K,_K,_K,_K,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_K,_K,_K,_K,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_K,_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # Norway — red + white/blue Nordic cross (cols 3-5, rows 2-4; blue centre)
+    "NO": [
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_B,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_B,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Denmark — red + white Nordic cross (cols 3-5, rows 2-4)
+    "DK": [
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Sweden — blue + yellow Nordic cross (cols 3-5, rows 2-4)
+    "SE": [
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # Finland — white + blue Nordic cross (cols 3-5, rows 2-4)
+    "FI": [
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+    ],
+    # United Kingdom — simplified Union Jack (St George cross + corner diagonals)
+    "GB": [
+        [_W,_B,_B,_B,_B,_W,_R,_R,_W,_B,_B,_B,_B,_W],
+        [_B,_W,_B,_B,_W,_B,_R,_R,_B,_W,_B,_B,_W,_B],
+        [_W,_W,_W,_W,_W,_W,_R,_R,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_R,_R,_W,_W,_W,_W,_W,_W],
+        [_B,_W,_B,_B,_W,_B,_R,_R,_B,_W,_B,_B,_W,_B],
+        [_W,_B,_B,_B,_B,_W,_R,_R,_W,_B,_B,_B,_B,_W],
+    ],
+    # Belgium — vertical black / yellow / red (5+4+5)
+    "BE": [
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+    ],
+    # Italy — vertical green / white / red (5+4+5)
+    "IT": [
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+    ],
+    # Unknown country — centred "?" in LED colour
+    "??": [
+        [_O,_O,_O,_O,_O,_L,_L,_L,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_L,_O,_O,_O,_L,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_O,_O,_L,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_L,_L,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_L,_O,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_L,_O,_O,_O,_O,_O,_O,_O],
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Navigation-status icons — 5×7 px, rendered between flag and ship name
+# AIS nav status codes: 0=underway engine, 1=at anchor, 6=aground, 15=undefined
+# ---------------------------------------------------------------------------
+NAV_STATUS_ICON = {
+    # At anchor — anchor silhouette in LED colour
+    1: [
+        [_O,_L,_L,_L,_O],   # ring arc
+        [_L,_O,_O,_O,_L],   # ring sides
+        [_O,_O,_L,_O,_O],   # shaft above stock
+        [_L,_L,_L,_L,_L],   # stock (crossbar)
+        [_O,_O,_L,_O,_O],   # shaft below stock
+        [_O,_L,_O,_L,_O],   # flukes
+        [_L,_O,_O,_O,_L],   # fluke tips
+    ],
+    # Aground — red X
+    6: [
+        [_R,_O,_O,_O,_R],
+        [_O,_R,_O,_R,_O],
+        [_O,_R,_O,_R,_O],
+        [_O,_O,_R,_O,_O],
+        [_O,_R,_O,_R,_O],
+        [_O,_R,_O,_R,_O],
+        [_R,_O,_O,_O,_R],
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -236,9 +431,9 @@ FLAGS = {
 SAMPLE_SHIPS = [
     {"direction": "UP",   "eta_min":  4, "flag": "CA", "name": "ALGONOVA"},
     {"direction": "UP",   "eta_min": 11, "flag": "US", "name": "WHITEFISH BAY"},
-    {"direction": "DOWN", "eta_min": 22, "flag": "CA", "name": "ALGOMA MARINER"},
+    {"direction": "DOWN", "eta_min": 22, "flag": "CA", "name": "ALGOMA MARINER", "nav_status": 1},
     {"direction": "UP",   "eta_min": 38, "flag": "CA", "name": "EDWIN H TUTTLE"},
-    {"direction": "DOWN", "eta_min": 45, "flag": "US", "name": "AMERICAN SPIRIT"},
+    {"direction": "DOWN", "eta_min": 45, "flag": "US", "name": "AMERICAN SPIRIT", "nav_status": 6},
     {"direction": "UP",   "eta_min": 67, "flag": "CA", "name": "ALGOMA TRANSPORT"},
 ]
 
@@ -307,14 +502,23 @@ def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
         raw_name  = (ship_json.get("shipname") or "").strip()
         name      = raw_name if raw_name else f"MMSI {ship_json.get('mmsi', '?')}"
         country   = (ship_json.get("country") or "").strip().upper()
-        flag      = country if country in FLAGS else ""
+        if country in FLAGS:
+            flag = country
+        elif country:
+            flag = "??"   # known MMSI country but no bitmap yet
+        else:
+            flag = ""     # no country info at all
+
+        ns = ship_json.get("status")
+        nav_status = int(ns) if ns is not None else 15
 
         return {
-            "direction": direction,
-            "eta_min":   round(eta_min),
-            "flag":      flag,
-            "name":      name,
-            "_eta_f":    eta_min,   # float for sorting
+            "direction":  direction,
+            "eta_min":    round(eta_min),
+            "flag":       flag,
+            "name":       name,
+            "nav_status": nav_status,
+            "_eta_f":     eta_min,   # float for sorting
         }
     except Exception:
         return None
@@ -482,9 +686,9 @@ def render_frame(ships, v_offset, h_offsets):
         if y_top + FONT_H > DISPLAY_ROWS:
             break
 
-        # -- Fixed prefix: direction arrow + right-justified ETA --
+        # -- Fixed prefix: direction arrow + right-justified ETA (2 digits max) --
         dir_char = "◀" if ship["direction"] == "UP" else "▶"
-        prefix_strip = render_strip(f"{dir_char} {ship['eta_min']:3d}m")
+        prefix_strip = render_strip(f"{dir_char}{ship['eta_min']:2d}m")
         for ri in range(FONT_H):
             for ci, code in enumerate(prefix_strip[ri]):
                 if ci < FLAG_X:
@@ -498,6 +702,14 @@ def render_frame(ships, v_offset, h_offsets):
                     if code != FC_OFF:
                         frame[y_top + ri][FLAG_X + ci] = code
 
+        # -- Status icon (static; anchor=1, aground=6; blank for normal underway) --
+        icon = NAV_STATUS_ICON.get(ship.get("nav_status", 15))
+        if icon is not None:
+            for ri, row in enumerate(icon):
+                for ci, code in enumerate(row):
+                    if code != FC_OFF:
+                        frame[y_top + ri][PREFIX_W + ci] = code
+
         # -- Scrolling name only --
         name_strip = get_name_strip(ship["name"])
         strip_w = len(name_strip[0])
@@ -506,7 +718,7 @@ def render_frame(ships, v_offset, h_offsets):
             # Name fits — blit once, rest stays FC_OFF
             for ri in range(FONT_H):
                 for ci in range(strip_w):
-                    frame[y_top + ri][PREFIX_W + ci] = name_strip[ri][ci]
+                    frame[y_top + ri][NAME_X + ci] = name_strip[ri][ci]
         else:
             # Name is wider than the zone — scroll with wrap
             h_off = h_offsets.get(ship_idx, 0)
@@ -515,7 +727,7 @@ def render_frame(ships, v_offset, h_offsets):
                 src_x = (h_off + px) % cycle
                 for ri in range(FONT_H):
                     code = name_strip[ri][src_x] if src_x < strip_w else FC_OFF
-                    frame[y_top + ri][PREFIX_W + px] = code
+                    frame[y_top + ri][NAME_X + px] = code
 
     return frame
 

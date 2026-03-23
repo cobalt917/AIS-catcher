@@ -64,31 +64,45 @@ def _truecolor_supported():
 #   1  = lit  (user-selected LED color, e.g. amber)
 #   2+ = flag colors
 # ---------------------------------------------------------------------------
-FC_OFF   = 0
-FC_LED   = 1
-FC_RED   = 2
-FC_WHITE = 3
-FC_BLUE  = 4
+FC_OFF    = 0
+FC_LED    = 1
+FC_RED    = 2
+FC_WHITE  = 3
+FC_BLUE   = 4
+FC_YELLOW = 5
+FC_BLACK  = 6
+FC_GREEN  = 7
 
 # 24-bit (R,G,B) for each flag color code
 FLAG_COLORS_24BIT = {
-    FC_RED:   (205,  32,  44),
-    FC_WHITE: (240, 240, 240),
-    FC_BLUE:  (  0,  40, 104),
+    FC_RED:    (205,  32,  44),
+    FC_WHITE:  (240, 240, 240),
+    FC_BLUE:   (  0,  40, 104),
+    FC_YELLOW: (255, 185,   0),
+    FC_BLACK:  ( 20,  20,  20),
+    FC_GREEN:  (  0, 150,   0),
 }
 
 # 256-color terminal index for each flag color code
 # 160 ≈ #d70000 (red), 231 = #ffffff (white), 19 = #0000af (blue)
 FLAG_COLORS_256 = {
-    FC_RED:   160,
-    FC_WHITE: 231,
-    FC_BLUE:   19,
+    FC_RED:    160,
+    FC_WHITE:  231,
+    FC_BLUE:    19,
+    FC_YELLOW: 226,
+    FC_BLACK:  232,
+    FC_GREEN:   34,
 }
 
 # Short aliases used in the bitmap definitions below
 _R = FC_RED
 _W = FC_WHITE
 _B = FC_BLUE
+_Y = FC_YELLOW
+_K = FC_BLACK
+_G = FC_GREEN
+_L = FC_LED
+_O = FC_OFF
 
 # ---------------------------------------------------------------------------
 # Flag bitmaps — 7 rows (same height as FONT_H) × N cols
@@ -96,8 +110,7 @@ _B = FC_BLUE
 # Add new flags here; they are referenced in text as [XX] tokens.
 # ---------------------------------------------------------------------------
 FLAGS = {
-    # United States — 7 × 14
-    # 4-col blue canton (top half) + red/white stripes across full width
+    # United States — blue canton + red/white stripes
     "US": [
         [_B,_B,_B,_B,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
         [_B,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
@@ -107,12 +120,7 @@ FLAGS = {
         [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
         [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
     ],
-    # Canada — 7 × 14
-    # 3-col red bands; centre 8 cols white with a simplified maple-leaf silhouette
-    #   row 0 / row 6 : narrow tip / stem (2 red px in centre)
-    #   row 1         : single-pixel upper lobes
-    #   row 2 / row 4 : wider body (6 red px)
-    #   row 3         : widest row — leaf blends across full width
+    # Canada — red bands + simplified maple-leaf centre
     "CA": [
         [_R,_R,_R,_W,_W,_W,_R,_R,_W,_W,_W,_R,_R,_R],
         [_R,_R,_R,_W,_R,_W,_R,_R,_W,_R,_W,_R,_R,_R],
@@ -121,6 +129,156 @@ FLAGS = {
         [_R,_R,_R,_W,_R,_R,_R,_R,_R,_R,_W,_R,_R,_R],
         [_R,_R,_R,_W,_W,_W,_R,_R,_W,_W,_W,_R,_R,_R],
         [_R,_R,_R,_W,_W,_W,_R,_R,_W,_W,_W,_R,_R,_R],
+    ],
+    # Netherlands — horizontal red / white / blue (2+3+2)
+    "NL": [
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # France — vertical blue / white / red (5+4+5)
+    "FR": [
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+    ],
+    # Germany — horizontal black / red / gold (2+3+2)
+    "DE": [
+        [_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K],
+        [_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K,_K],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+    ],
+    # Malta — vertical white / red split
+    "MT": [
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Liberia — blue canton (6×4) + red/white stripes
+    "LR": [
+        [_B,_B,_B,_B,_B,_B,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_B,_B,_B,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Panama — 4 quadrants: white/blue top, red/white bottom
+    "PA": [
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_W,_W,_W,_B,_B,_B,_B,_B,_B,_B],
+        [_R,_R,_R,_R,_R,_R,_R,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_W,_W,_W,_W,_W,_W,_W],
+    ],
+    # Bahamas — aquamarine(≈blue)/gold/aquamarine stripes + black left triangle
+    "BS": [
+        [_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_K,_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_K,_K,_K,_K,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_K,_K,_K,_K,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_K,_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # Norway — red + white/blue Nordic cross (cols 3-5, rows 2-4; blue centre)
+    "NO": [
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_B,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_W,_B,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Denmark — red + white Nordic cross (cols 3-5, rows 2-4)
+    "DK": [
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_R,_R,_R,_W,_W,_W,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Sweden — blue + yellow Nordic cross (cols 3-5, rows 2-4)
+    "SE": [
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y,_Y],
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_Y,_Y,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # Finland — white + blue Nordic cross (cols 3-5, rows 2-4)
+    "FI": [
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+        [_W,_W,_W,_B,_B,_B,_W,_W,_W,_W,_W,_W,_W,_W],
+    ],
+    # United Kingdom — simplified Union Jack (St George cross + corner diagonals)
+    "GB": [
+        [_W,_B,_B,_B,_B,_W,_R,_R,_W,_B,_B,_B,_B,_W],
+        [_B,_W,_B,_B,_W,_B,_R,_R,_B,_W,_B,_B,_W,_B],
+        [_W,_W,_W,_W,_W,_W,_R,_R,_W,_W,_W,_W,_W,_W],
+        [_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_W,_W,_W,_W,_W,_W,_R,_R,_W,_W,_W,_W,_W,_W],
+        [_B,_W,_B,_B,_W,_B,_R,_R,_B,_W,_B,_B,_W,_B],
+        [_W,_B,_B,_B,_B,_W,_R,_R,_W,_B,_B,_B,_B,_W],
+    ],
+    # Belgium — vertical black / yellow / red (5+4+5)
+    "BE": [
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+        [_K,_K,_K,_K,_K,_Y,_Y,_Y,_Y,_R,_R,_R,_R,_R],
+    ],
+    # Italy — vertical green / white / red (5+4+5)
+    "IT": [
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
+    ],
+    # Unknown country — centred "?" in LED colour
+    "??": [
+        [_O,_O,_O,_O,_O,_L,_L,_L,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_L,_O,_O,_O,_L,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_O,_O,_L,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_L,_L,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_L,_O,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O,_O],
+        [_O,_O,_O,_O,_O,_O,_L,_O,_O,_O,_O,_O,_O,_O],
     ],
 }
 
