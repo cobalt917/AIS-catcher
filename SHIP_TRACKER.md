@@ -191,7 +191,8 @@ Falls back to `--sample` (hardcoded `SAMPLE_SHIPS`) for offline testing.
 
 **Live data source:** `/api/ships.json` on the AIS-catcher web server (elberta:8080).
 ETA/CPA math runs in Python using the same vector math as `ETACalculator.cpp`.
-Direction: `cos(COG) >= 0` → UP (northerly), else DOWN (southerly).
+Direction: MMSI latitude trend (primary) — increasing lat = UP (toward Lake Huron).
+Fallback for first-seen ships: COG projected onto 340° waterway axis (`_direction_cog_axis()`).
 
 **Display states:**
 - Wave image — server reachable but no ships pass the CPA filter; navy-blue water body + white foam caps (uses flag colour pipeline, not the LED colour)
@@ -236,8 +237,8 @@ python3 scripts/led_display.py --server http://elberta:8080
 [◀ 4m][CA flag] ALGONOVA
 [▶22m][CA flag] ALGOMA MARINER scrolls...
 ```
-- **Fixed zone (45 px):** arrow + ETA (23 px) · flag (14 px) · status icon (5 px) · each separated by 1 px gap
-- **Scrolling zone (83 px):** ship name only — scrolls if wider than 83 px, static otherwise
+- **Fixed zone (39 px):** arrow + ETA (23 px) · flag (14 px) · status icon (5 px) · each separated by 1 px gap
+- **Scrolling zone (89 px):** ship name only — scrolls if wider than 89 px, static otherwise
 - **Direction:** `◀` = upstream (UP), `▶` = downstream (DOWN)
 - **Vertical cycling:** 3 ships visible at once; rotates by 1 every `--page-time` seconds
 
@@ -258,8 +259,9 @@ python3 scripts/led_display.py --server http://elberta:8080
 - ~~Single ship displayed on all 3 rows~~ **Fixed** — `render_frame` now iterates `min(ROWS_PER_FRAME, n)` rows so fewer ships than slots don't wrap back to row 0
 - ~~Display rotates when all ships fit on screen~~ **Fixed** — `v_offset` only advances when ship count exceeds the number of visible rows (3 in normal mode, 2 in stacked mode)
 - ~~Font size options~~ **Done** — `--zoom` flag activates stacked layout when 1–2 ships visible: arrow stretched to full row height (5px wide × 16 or 32px tall), ETA and flag stacked vertically (both small font) in a 17px column, name scrolls in the remaining 104px zone (vs 83px normal). Try: `python3 scripts/led_display.py --sim --sample --zoom` (trim SAMPLE_SHIPS to 1–2 entries to test stacked mode)
-- Direction tolerance tuning (currently pure north/south hemisphere split on COG)
+- ~~Direction tolerance tuning~~ **Done** — MMSI latitude history (primary) + COG projected onto 340° waterway axis (fallback). History requires ≥ 2 observations, ≥ 60 s spread, ≥ 0.002° lat delta; falls back to axis projection for first-seen ships. `import collections` added; `_lat_history` dict, `_record_lat()`, `_direction_from_lat_history()`, `_direction_cog_axis()` added to `led_display.py`.
 - Time-of-day brightness dimming: reduce LED brightness at night/early morning for kitchen installation
+- Negative ETA / recent passage: once a ship passes the observation point, continue showing it with a negative countdown (e.g. `◀-3m`) until 10 minutes after passage, then drop it. Format constraint: keep the ETA field 3 chars wide — either ` 4m` (space + 2 digits) for approaching, or `-3m` (minus + 1 digit) for recent passage. Ship is still visible for several minutes after passing so the display remains useful.
 - ~~Flag coverage~~ **Done** — curated Great Lakes / St Lawrence Seaway subset: US CA NL FR DE MT LR PA BS NO DK SE FI GB BE IT (16 countries). Unknown MMSI country codes show a `?` icon; ships with no country field show a blank. New FC_ colour constants added: FC_YELLOW, FC_BLACK, FC_GREEN. Both `led_display.py` and `led_sim.py` updated identically. Preview any flag: `python3 scripts/led_sim.py "[NL] TEST" --size 32x128 --panel 32x64`
 - ~~Compress fixed zone layout~~ **Done** — fixed zone reduced from 51 px to 39 px; name zone expanded from 77 px to 89 px; ETA now 2-digit right-justified (`▶ 4m` / `▶22m`)
 - ~~AIS status icons~~ **Done** — 5×7 px static icons between flag and name: ⚓-shaped glyph (FC_GREY, rgb 130,130,130) for nav_status 1 (at anchor); red X (FC_RED) for nav_status 6 (aground); blank for all other states. Anchor design: shaft pierces ring centre (`10101` row) matching ⚓ emoji. API field: `status`. FC_GREY = 8 added to both scripts. Two SAMPLE_SHIPS entries carry test values (ALGOMA MARINER=1, AMERICAN SPIRIT=6)
