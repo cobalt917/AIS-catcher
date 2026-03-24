@@ -184,6 +184,61 @@ New flags can be added to the `FLAGS` dict in the script.
 
 ---
 
+## Raspberry Pi WiFi Setup
+
+The Pi uses a small USB WiFi adapter (plug-and-play, no driver install needed).
+
+**Interface:** `wlan0`
+**MAC address:** `10:5a:95:99:87:48` — added to MAC filter on router (UDM SE)
+**Network:** `hillcountry` (WPA2/WPA3 mixed mode on UDM SE)
+
+**wpa_supplicant config** — `/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` (owned `root:root`, mode `600`):
+```
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=US
+
+network={
+    ssid="hillcountry"
+    psk="..."
+    key_mgmt=WPA-PSK
+    mac_addr=0
+}
+```
+
+Note: `key_mgmt=WPA-PSK` is required even though the network is WPA2/WPA3 mixed — the older
+wpa_supplicant on Pi 1 does not successfully negotiate SAE. The router accepts WPA2 from it fine.
+
+**Services** (both enabled and persistent across reboots):
+- `wpa_supplicant@wlan0` — authenticates using the `-wlan0` config file
+- `dhcpcd` — requests DHCP lease; installed via `sudo apt install dhcpcd5`
+
+---
+
+## LED Display Autostart
+
+The display script runs as a systemd service on boot.
+
+**`/etc/systemd/system/led-display.service`:**
+```ini
+[Unit]
+Description=LED Ship Display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/daniel/AIS-catcher/scripts/led_display.py --server http://elberta:8080
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enabled with `sudo systemctl enable --now led-display`. Runs as root (required for GPIO access).
+
+---
+
 ## LED Display Driver (`scripts/led_display.py`)
 
 Animates the two 32×64 panels with approaching ship data fetched live from AIS-catcher.
