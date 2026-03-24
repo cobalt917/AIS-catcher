@@ -22,6 +22,7 @@ is computed locally using the same vector math as the C++ ETACalculator.
 """
 
 import argparse
+import collections
 import json
 import math
 import os
@@ -453,9 +454,59 @@ DEFAULT_FETCH_INTERVAL = 30    # seconds between server polls
 DEFAULT_MAX_AGE_SEC   = 300    # exclude ships last seen more than this many seconds ago
 
 
-def _cpa_direction(cog_deg):
-    """UP (northerly COG) or DOWN (southerly COG). cos(COG)>=0 → north."""
-    return "UP" if math.cos(math.radians(cog_deg)) >= 0 else "DOWN"
+# ---------------------------------------------------------------------------
+# Direction detection: MMSI latitude history + COG-axis fallback
+# ---------------------------------------------------------------------------
+
+# Approximate "upriver" heading (Lake Erie → Lake Huron) along the Detroit
+# River / Lake St. Clair waterway.  Projecting COG onto this axis is more
+# robust than a pure N/S split for a curved waterway.
+_UPRIVER_HEADING_DEG = 340.0
+
+# Per-MMSI latitude observations for trend-based direction detection.
+# Key: str(mmsi). Value: deque of (monotonic_time, latitude) tuples.
+_lat_history        = {}
+_LAT_HIST_MAXLEN    = 30    # observations to keep per ship
+_LAT_HIST_MIN_SPAN  = 60.0  # seconds of spread required before trusting trend
+_LAT_HIST_MIN_DELTA = 0.002 # degrees of lat movement required (~0.12 NM)
+
+
+def _direction_cog_axis(cog_deg):
+    """
+    Project COG onto the waterway axis (_UPRIVER_HEADING_DEG).
+    Returns 'UP' if the ship has a net upriver component, else 'DOWN'.
+    More robust than a pure N/S split because it tolerates bends up to ±90°
+    from the channel axis.
+    """
+    diff = math.radians(cog_deg - _UPRIVER_HEADING_DEG)
+    return "UP" if math.cos(diff) >= 0 else "DOWN"
+
+
+def _record_lat(mmsi, lat):
+    """Record a (monotonic_time, lat) observation for this MMSI."""
+    key = str(mmsi)
+    if key not in _lat_history:
+        _lat_history[key] = collections.deque(maxlen=_LAT_HIST_MAXLEN)
+    _lat_history[key].append((time.monotonic(), lat))
+
+
+def _direction_from_lat_history(mmsi):
+    """
+    Return 'UP' or 'DOWN' from the ship's latitude trend, or None if there is
+    insufficient history (too few observations, not enough time elapsed, or
+    negligible lat movement).  Increasing latitude = upriver (toward Lake Huron).
+    """
+    hist = _lat_history.get(str(mmsi))
+    if not hist or len(hist) < 2:
+        return None
+    t0, lat0 = hist[0]
+    t1, lat1 = hist[-1]
+    if t1 - t0 < _LAT_HIST_MIN_SPAN:
+        return None
+    delta = lat1 - lat0
+    if abs(delta) < _LAT_HIST_MIN_DELTA:
+        return None  # negligible latitude movement — don't guess
+    return "UP" if delta > 0 else "DOWN"
 
 
 def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
@@ -501,9 +552,10 @@ def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
             return None  # won't come close enough
 
         eta_min   = tcpa_h * 60.0
-        direction = _cpa_direction(cog)
+        mmsi      = ship_json.get("mmsi")
+        direction = _direction_from_lat_history(mmsi) or _direction_cog_axis(cog)
         raw_name  = (ship_json.get("shipname") or "").strip()
-        name      = raw_name if raw_name else f"MMSI {ship_json.get('mmsi', '?')}"
+        name      = raw_name if raw_name else "..."
         country   = (ship_json.get("country") or "").strip().upper()
         if country in FLAGS:
             flag = country
@@ -542,6 +594,13 @@ def fetch_ships(server_url, station_lat, station_lon, cpa_nm, max_age_sec):
 
     results = []
     for ship in data.get("ships", []):
+        # Record lat history for every ship regardless of age/CPA filters so
+        # that direction detection has data ready when a ship enters the window.
+        mmsi = ship.get("mmsi")
+        lat  = ship.get("lat")
+        if mmsi is not None and lat is not None:
+            _record_lat(mmsi, lat)
+
         if (ship.get("last_signal") or 9999) > max_age_sec:
             continue
         entry = _compute_eta(ship, station_lat, station_lon, cpa_nm)
@@ -625,35 +684,44 @@ def _token_width(tok):
     return FONT_W
 
 
-def render_strip(text):
+def render_strip(text, scale=1):
     """
-    Render text into a pixel strip.
+    Render text into a pixel strip at the given scale (1 or 2).
     Returns a 2D list: strip[row][col] = FC_* color code.
-    Height is always FONT_H; width depends on content.
+    Height is FONT_H * scale; width depends on content and scale.
+    Flag tokens [XX] are always rendered at natural (unscaled) size, centred vertically.
     """
+    fh = FONT_H * scale
+    fw = FONT_W * scale
+    cg = CHAR_GAP * scale
+
     tokens = tokenize(text)
     if not tokens:
         return [[FC_OFF]]
 
-    widths = [_token_width(t) for t in tokens]
-    total_w = sum(widths) + CHAR_GAP * (len(tokens) - 1)
-    grid = [[FC_OFF] * total_w for _ in range(FONT_H)]
+    widths = [len(FLAGS[t[1:-1]][0]) if (t.startswith('[') and t.endswith(']')) else fw
+              for t in tokens]
+    total_w = sum(widths) + cg * (len(tokens) - 1)
+    grid = [[FC_OFF] * total_w for _ in range(fh)]
 
     x = 0
     for tok, w in zip(tokens, widths):
         if tok.startswith('[') and tok.endswith(']'):
             bitmap = FLAGS[tok[1:-1]]
+            y_off = (fh - FONT_H) // 2
             for ri, row in enumerate(bitmap):
                 for ci, code in enumerate(row):
                     if code != FC_OFF:
-                        grid[ri][x + ci] = code
+                        grid[y_off + ri][x + ci] = code
         else:
             rows = FONT.get(tok, UNKNOWN_CHAR)
             for ri, row_str in enumerate(rows):
                 for ci, bit in enumerate(row_str):
                     if bit == '1':
-                        grid[ri][x + ci] = FC_LED
-        x += w + CHAR_GAP
+                        for dy in range(scale):
+                            for dx in range(scale):
+                                grid[ri * scale + dy][x + ci * scale + dx] = FC_LED
+        x += w + cg
 
     return grid
 
@@ -667,79 +735,171 @@ def get_name_strip(name):
     return _strip_cache[name]
 
 
-def render_frame(ships, v_offset, h_offsets):
+def _stacked_layout(n):
+    """
+    Geometry for zoom-stacked mode: tall arrow | stacked ETA+flag | wide scrolling name.
+    n is the number of visible ships (1 or 2).  Each ship gets DISPLAY_ROWS // n px of height.
+      n=2 → row_h=16: ETA at top 7px, flag at bottom 7px, 2px gap between
+      n=1 → row_h=32: stacked block centred vertically
+    Name zone is 104px — most Great Lakes names fit without scrolling.
+    """
+    row_h       = DISPLAY_ROWS // max(n, 1)          # 16 for n=2, 32 for n=1
+    arrow_w     = FONT_W                              # 5 px wide, same as normal font
+    stack_x     = arrow_w + 1                         # 6
+    eta_w       = 3 * FONT_W + 2 * CHAR_GAP          # "22m" = 17 px
+    stack_w     = max(eta_w, _FLAG_W)                 # 17 px
+    name_x      = stack_x + stack_w + 1               # 24
+    name_w      = DISPLAY_COLS - name_x               # 104
+    stacked_h   = FONT_H + LINE_GAP + FONT_H          # 16 px (ETA gap flag)
+    stack_y_off = (row_h - stacked_h) // 2           # 0 for n=2, 8 for n=1
+    return dict(
+        row_h=row_h, arrow_w=arrow_w, stack_x=stack_x, stack_w=stack_w,
+        name_x=name_x, name_w=name_w,
+        eta_y_off=stack_y_off,
+        flag_y_off=stack_y_off + FONT_H + LINE_GAP,  # ETA + 2px gap
+        name_y_off=stack_y_off,                       # name top-aligned with ETA
+        rows=n,
+    )
+
+
+def _tall_arrow(direction, height):
+    """
+    Generate a 5×height filled-diamond arrow bitmap (list of '0'/'1' strings).
+    Tips are 1 px wide; body tapers linearly over the outer 40% of each half.
+    direction: 'UP' → ◀ (left-pointing), anything else → ▶ (right-pointing).
+    """
+    half       = height / 2
+    taper_zone = half * 0.4
+    rows = []
+    for y in range(height):
+        dist = abs(y - (height - 1) / 2)
+        if dist <= half - taper_zone:
+            w = 5
+        else:
+            t = (dist - (half - taper_zone)) / taper_zone
+            w = max(1, round(5 * (1 - t)))
+        rows.append("0" * (5 - w) + "1" * w if direction == "UP"
+                    else "1" * w + "0" * (5 - w))
+    return rows
+
+
+def render_frame(ships, v_offset, h_offsets, stacked=False):
     """
     Build a complete display frame as FC_* color codes.
     Returns frame[y][x] — size DISPLAY_ROWS × DISPLAY_COLS.
 
-    ships     — list of ship dicts
-    v_offset  — index of first visible ship (vertical cycling)
-    h_offsets — dict of ship_idx → horizontal scroll offset in pixels
+    ships   — list of ship dicts
+    stacked — True uses zoom-stacked layout (tall arrow + stacked ETA/flag + wide name)
     """
     frame = [[FC_OFF] * DISPLAY_COLS for _ in range(DISPLAY_ROWS)]
     n = len(ships)
     if not n:
         return frame
 
-    for dr in range(ROWS_PER_FRAME):
-        ship_idx = (v_offset + dr) % n
-        ship = ships[ship_idx]
-        y_top = Y_START + dr * ROW_H
+    if stacked:
+        # -- Zoom-stacked layout --
+        L = _stacked_layout(min(n, 2))
+        for dr in range(L["rows"]):
+            ship_idx = (v_offset + dr) % n
+            ship     = ships[ship_idx]
+            y_top    = dr * L["row_h"]
 
-        if y_top + FONT_H > DISPLAY_ROWS:
-            break
+            # Tall arrow
+            arrow_bmp = _tall_arrow(ship["direction"], L["row_h"])
+            for ri, row_str in enumerate(arrow_bmp):
+                for ci, bit in enumerate(row_str):
+                    if bit == '1':
+                        frame[y_top + ri][ci] = FC_LED
 
-        # -- Fixed prefix: direction arrow + right-justified ETA (2 digits max) --
-        dir_char = "◀" if ship["direction"] == "UP" else "▶"
-        prefix_strip = render_strip(f"{dir_char}{ship['eta_min']:2d}m")
-        for ri in range(FONT_H):
-            for ci, code in enumerate(prefix_strip[ri]):
-                if ci < FLAG_X:
-                    frame[y_top + ri][ci] = code
-
-        # -- Fixed flag bitmap --
-        flag_key = ship.get("flag")
-        if flag_key and flag_key in FLAGS:
-            for ri, row in enumerate(FLAGS[flag_key]):
-                for ci, code in enumerate(row):
-                    if code != FC_OFF:
-                        frame[y_top + ri][FLAG_X + ci] = code
-
-        # -- Status icon (static; anchor=1, aground=6; blank for normal underway) --
-        icon = NAV_STATUS_ICON.get(ship.get("nav_status", 15))
-        if icon is not None:
-            for ri, row in enumerate(icon):
-                for ci, code in enumerate(row):
-                    if code != FC_OFF:
-                        frame[y_top + ri][PREFIX_W + ci] = code
-
-        # -- Scrolling name only --
-        name_strip = get_name_strip(ship["name"])
-        strip_w = len(name_strip[0])
-
-        if strip_w <= NAME_W:
-            # Name fits — blit once, rest stays FC_OFF
+            # ETA (small font, top of stacked column)
+            eta_strip = render_strip(f"{ship['eta_min']:2d}m")
             for ri in range(FONT_H):
-                for ci in range(strip_w):
-                    frame[y_top + ri][NAME_X + ci] = name_strip[ri][ci]
-        else:
-            # Name is wider than the zone — scroll with wrap
-            h_off = h_offsets.get(ship_idx, 0)
-            cycle = strip_w + SCROLL_GAP
-            for px in range(NAME_W):
-                src_x = (h_off + px) % cycle
+                for ci, code in enumerate(eta_strip[ri]):
+                    frame[y_top + L["eta_y_off"] + ri][L["stack_x"] + ci] = code
+
+            # Flag (small, below ETA)
+            flag_key = ship.get("flag")
+            if flag_key and flag_key in FLAGS:
+                for ri, row in enumerate(FLAGS[flag_key]):
+                    for ci, code in enumerate(row):
+                        if code != FC_OFF:
+                            frame[y_top + L["flag_y_off"] + ri][L["stack_x"] + ci] = code
+
+            # Scrolling name
+            name_strip = get_name_strip(ship["name"])
+            strip_w    = len(name_strip[0])
+            ny         = y_top + L["name_y_off"]
+            if strip_w <= L["name_w"]:
                 for ri in range(FONT_H):
-                    code = name_strip[ri][src_x] if src_x < strip_w else FC_OFF
-                    frame[y_top + ri][NAME_X + px] = code
+                    for ci in range(strip_w):
+                        frame[ny + ri][L["name_x"] + ci] = name_strip[ri][ci]
+            else:
+                h_off = h_offsets.get(ship_idx, 0)
+                cycle = strip_w + SCROLL_GAP
+                for px in range(L["name_w"]):
+                    src_x = (h_off + px) % cycle
+                    for ri in range(FONT_H):
+                        frame[ny + ri][L["name_x"] + px] = (
+                            name_strip[ri][src_x] if src_x < strip_w else FC_OFF)
+    else:
+        # -- Normal 3-row layout --
+        for dr in range(min(ROWS_PER_FRAME, n)):
+            ship_idx = (v_offset + dr) % n
+            ship     = ships[ship_idx]
+            y_top    = Y_START + dr * ROW_H
+
+            if y_top + FONT_H > DISPLAY_ROWS:
+                break
+
+            # Fixed prefix: direction arrow + right-justified ETA
+            dir_char = "◀" if ship["direction"] == "UP" else "▶"
+            prefix_strip = render_strip(f"{dir_char}{ship['eta_min']:2d}m")
+            for ri in range(FONT_H):
+                for ci, code in enumerate(prefix_strip[ri]):
+                    if ci < FLAG_X:
+                        frame[y_top + ri][ci] = code
+
+            # Flag bitmap
+            flag_key = ship.get("flag")
+            if flag_key and flag_key in FLAGS:
+                for ri, row in enumerate(FLAGS[flag_key]):
+                    for ci, code in enumerate(row):
+                        if code != FC_OFF:
+                            frame[y_top + ri][FLAG_X + ci] = code
+
+            # Status icon
+            icon = NAV_STATUS_ICON.get(ship.get("nav_status", 15))
+            if icon is not None:
+                for ri, row in enumerate(icon):
+                    for ci, code in enumerate(row):
+                        if code != FC_OFF:
+                            frame[y_top + ri][PREFIX_W + ci] = code
+
+            # Scrolling name
+            name_strip = get_name_strip(ship["name"])
+            strip_w    = len(name_strip[0])
+            if strip_w <= NAME_W:
+                for ri in range(FONT_H):
+                    for ci in range(strip_w):
+                        frame[y_top + ri][NAME_X + ci] = name_strip[ri][ci]
+            else:
+                h_off = h_offsets.get(ship_idx, 0)
+                cycle = strip_w + SCROLL_GAP
+                for px in range(NAME_W):
+                    src_x = (h_off + px) % cycle
+                    for ri in range(FONT_H):
+                        code = name_strip[ri][src_x] if src_x < strip_w else FC_OFF
+                        frame[y_top + ri][NAME_X + px] = code
 
     return frame
 
 
-def advance_scrolls(ships, h_offsets, scroll_speed):
-    """Advance horizontal scroll offsets for ships whose names are wider than NAME_W."""
+def advance_scrolls(ships, h_offsets, scroll_speed, stacked=False):
+    """Advance horizontal scroll offsets for ships whose names are wider than the name zone."""
+    name_w = _stacked_layout(min(len(ships), 2))["name_w"] if stacked else NAME_W
     for i, ship in enumerate(ships):
         strip_w = len(get_name_strip(ship["name"])[0])
-        if strip_w > NAME_W:
+        if strip_w > name_w:
             h_offsets[i] = (h_offsets[i] + scroll_speed) % (strip_w + SCROLL_GAP)
 
 
@@ -853,12 +1013,13 @@ def frame_to_terminal(frame, color_name, force_truecolor=False):
 # ---------------------------------------------------------------------------
 
 def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
-        fetcher=None):
+        fetcher=None, zoom_auto=False):
     """
     Animation loop.
 
-    ships   — initial ship list (used as-is when fetcher is None / --sample)
-    fetcher — ShipFetcher instance; if set, ships are refreshed at each page turn
+    ships     — initial ship list (used as-is when fetcher is None / --sample)
+    fetcher   — ShipFetcher instance; if set, ships are refreshed at each page turn
+    zoom_auto — if True, use 2× font scale when only 1 or 2 ships are visible
     """
     led_rgb   = LED_COLORS.get(color, LED_COLORS["amber"])
     h_offsets = {i: 0 for i in range(len(ships))}
@@ -868,6 +1029,9 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
 
     # fetch_failed is always False in --sample mode
     fetch_failed = False
+
+    def _stacked(current_ships):
+        return zoom_auto and len(current_ships) <= 2
 
     def _refresh(current_ships, current_failed):
         """Pull fresh state from fetcher; reset scroll state when ship list changes."""
@@ -886,12 +1050,9 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
             return render_status_frame("Server error")
         if not current_ships:
             return render_wave_frame()
-        return render_frame(current_ships, v_offset, h_offsets)
+        return render_frame(current_ships, v_offset, h_offsets, _stacked(current_ships))
 
     if use_sim:
-        for s in ships:
-            get_name_strip(s["name"])
-
         print("\033[?25l", end="", flush=True)  # hide cursor
         n = len(ships)
         print(f"  {n} ships [{data_src}] | ◀=UP  ▶=DOWN | "
@@ -909,13 +1070,15 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
                 else:
                     print(f"\033[{DISPLAY_ROWS}A" + output, flush=True)
 
-                advance_scrolls(ships, h_offsets, scroll_speed)
+                advance_scrolls(ships, h_offsets, scroll_speed, _stacked(ships))
 
                 now = time.time()
                 if now - last_page >= page_time:
                     ships, fetch_failed = _refresh(ships, fetch_failed)
                     n = len(ships)
-                    v_offset = (v_offset + 1) % max(1, n)
+                    max_visible = 2 if _stacked(ships) else ROWS_PER_FRAME
+                    if n > max_visible:
+                        v_offset = (v_offset + 1) % n
                     last_page = now
 
                 time.sleep(tick_ms / 1000)
@@ -935,12 +1098,15 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
                 write_frame_to_canvas(canvas, frame, led_rgb)
                 canvas = matrix.SwapOnVSync(canvas)
 
-                advance_scrolls(ships, h_offsets, scroll_speed)
+                advance_scrolls(ships, h_offsets, scroll_speed, _stacked(ships))
 
                 now = time.time()
                 if now - last_page >= page_time:
                     ships, fetch_failed = _refresh(ships, fetch_failed)
-                    v_offset = (v_offset + 1) % max(1, len(ships))
+                    n = len(ships)
+                    max_visible = 2 if _stacked(ships) else ROWS_PER_FRAME
+                    if n > max_visible:
+                        v_offset = (v_offset + 1) % n
                     last_page = now
 
                 time.sleep(tick_ms / 1000)
@@ -1019,6 +1185,10 @@ examples:
         "--truecolor", action="store_true",
         help="force 24-bit ANSI color in --sim mode",
     )
+    parser.add_argument(
+        "--zoom", action="store_true",
+        help="use 2× font scale when only 1 or 2 ships are visible",
+    )
     args = parser.parse_args()
 
     use_sim = args.sim
@@ -1057,6 +1227,7 @@ examples:
         use_sim,
         args.truecolor,
         fetcher=fetcher,
+        zoom_auto=args.zoom,
     )
 
 

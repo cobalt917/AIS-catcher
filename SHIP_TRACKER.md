@@ -254,7 +254,10 @@ python3 scripts/led_display.py --server http://elberta:8080
 ```
 
 **Still to do:**
-- Font size options for fitting more ships on screen simultaneously
+- ~~Display `...` instead of `MMSI XXXXXXXXX` when no ship name is received~~ **Done** — `led_display.py` fallback name is now `"..."` when `shipname` is absent
+- ~~Single ship displayed on all 3 rows~~ **Fixed** — `render_frame` now iterates `min(ROWS_PER_FRAME, n)` rows so fewer ships than slots don't wrap back to row 0
+- ~~Display rotates when all ships fit on screen~~ **Fixed** — `v_offset` only advances when ship count exceeds the number of visible rows (3 in normal mode, 2 in stacked mode)
+- ~~Font size options~~ **Done** — `--zoom` flag activates stacked layout when 1–2 ships visible: arrow stretched to full row height (5px wide × 16 or 32px tall), ETA and flag stacked vertically (both small font) in a 17px column, name scrolls in the remaining 104px zone (vs 83px normal). Try: `python3 scripts/led_display.py --sim --sample --zoom` (trim SAMPLE_SHIPS to 1–2 entries to test stacked mode)
 - Direction tolerance tuning (currently pure north/south hemisphere split on COG)
 - Time-of-day brightness dimming: reduce LED brightness at night/early morning for kitchen installation
 - ~~Flag coverage~~ **Done** — curated Great Lakes / St Lawrence Seaway subset: US CA NL FR DE MT LR PA BS NO DK SE FI GB BE IT (16 countries). Unknown MMSI country codes show a `?` icon; ships with no country field show a blank. New FC_ colour constants added: FC_YELLOW, FC_BLACK, FC_GREEN. Both `led_display.py` and `led_sim.py` updated identically. Preview any flag: `python3 scripts/led_sim.py "[NL] TEST" --size 32x128 --panel 32x64`
