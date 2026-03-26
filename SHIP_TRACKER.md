@@ -105,8 +105,10 @@ AIS-catcher -R recording.nmea -o 7 CPA 2.0 REFRESH 10 LAT 42.37 LON -82.92
 | Power supply      | Meanwell LRS-50-5 (5V 10A)                          |
 | RTL-SDR           | RTL-SDR Blog V4 (on Debian server, not the Pi)       |
 
-**Power wiring:** Panels powered directly from Meanwell. Pi powered via the Adafruit
-RGB Matrix Bonnet's 5V passthrough (not USB).
+**Power wiring:** Panels powered directly from Meanwell. Pi powered either via a
+sacrificed Micro USB cable wired to the Meanwell (+5V/GND), or by injecting 5V directly
+into GPIO pins 2/4 (+5V) and pin 6 (GND). The USB route goes through the onboard
+polyfuse; the GPIO route bypasses it.
 
 **Important:** The Pi 1 Model B has only 26 GPIO pins. The default rpi-rgb-led-matrix
 GPIO mapping uses GPIO 27 (pin 13 on a 40-pin header, absent here) for G1, which caused
