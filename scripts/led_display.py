@@ -901,12 +901,16 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
 
 
 def advance_scrolls(ships, h_offsets, scroll_speed, stacked=False):
-    """Advance horizontal scroll offsets for ships whose names are wider than the name zone."""
+    """Advance horizontal scroll offsets for ships whose names are wider than the name zone.
+    Returns True if any offset actually moved (i.e. a redraw is needed)."""
     name_w = _stacked_layout(min(len(ships), 2))["name_w"] if stacked else NAME_W
+    moved = False
     for i, ship in enumerate(ships):
         strip_w = len(get_name_strip(ship["name"])[0])
         if strip_w > name_w:
             h_offsets[i] = (h_offsets[i] + scroll_speed) % (strip_w + SCROLL_GAP)
+            moved = True
+    return moved
 
 
 def render_status_frame(text):
@@ -961,8 +965,9 @@ def create_matrix():
     opts.hardware_mapping = "regular-pi1"
 #    opts.slowdown_gpio = 2
     opts.brightness = 80
-    opts.pwm_bits = 4              # 16 brightness levels — enough for our palette; ~8× less driver CPU
-    opts.limit_refresh_rate_hz = 100  # cap internal scan rate; reduces CPU and stabilises timing
+    opts.pwm_bits = 4                  # 16 brightness levels — enough for our palette; ~8× less driver CPU
+    opts.pwm_lsb_nanoseconds = 500    # wider LSB pulse → driver sleeps more between GPIO ops; reduces CPU ~4×
+    opts.limit_refresh_rate_hz = 50   # 50 Hz is imperceptible for ship data; halves driver loop rate
     return RGBMatrix(options=opts)
 
 
@@ -1107,13 +1112,18 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
     else:
         matrix = create_matrix()
         canvas = matrix.CreateFrameCanvas()
+        needs_redraw = True
         try:
             while True:
-                frame = _build_frame(ships, fetch_failed)
-                write_frame_to_canvas(canvas, frame, led_rgb)
-                canvas = matrix.SwapOnVSync(canvas)
+                if needs_redraw:
+                    frame = _build_frame(ships, fetch_failed)
+                    write_frame_to_canvas(canvas, frame, led_rgb)
+                    canvas = matrix.SwapOnVSync(canvas)
+                    needs_redraw = False
 
-                advance_scrolls(ships, h_offsets, scroll_speed, _stacked(ships))
+                scrolled = advance_scrolls(ships, h_offsets, scroll_speed, _stacked(ships))
+                if scrolled:
+                    needs_redraw = True
 
                 now = time.time()
                 if now - last_page >= page_time:
@@ -1123,6 +1133,7 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
                     if n > max_visible:
                         v_offset = (v_offset + 1) % n
                     last_page = now
+                    needs_redraw = True
 
                 time.sleep(tick_ms / 1000)
 
@@ -1135,6 +1146,10 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
 # ---------------------------------------------------------------------------
 
 def main():
+    # Lower Python process priority so the RT-scheduled matrix driver thread and
+    # other system processes (SSH, systemd) can preempt us more readily.
+    os.nice(10)
+
     parser = argparse.ArgumentParser(
         description="LED display driver for ship tracker",
         formatter_class=argparse.RawDescriptionHelpFormatter,
