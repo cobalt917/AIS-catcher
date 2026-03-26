@@ -961,20 +961,30 @@ def create_matrix():
     opts.hardware_mapping = "regular-pi1"
 #    opts.slowdown_gpio = 2
     opts.brightness = 80
+    opts.pwm_bits = 4              # 16 brightness levels — enough for our palette; ~8× less driver CPU
+    opts.limit_refresh_rate_hz = 100  # cap internal scan rate; reduces CPU and stabilises timing
     return RGBMatrix(options=opts)
 
 
 def write_frame_to_canvas(canvas, frame, led_rgb):
-    lr, lg, lb = led_rgb
-    for y, row in enumerate(frame):
-        for x, code in enumerate(row):
-            if code == FC_OFF:
-                canvas.SetPixel(x, y, 0, 0, 0)
-            elif code == FC_LED:
-                canvas.SetPixel(x, y, lr, lg, lb)
-            else:
-                r, g, b = FLAG_RGB.get(code, led_rgb)
-                canvas.SetPixel(x, y, r, g, b)
+    from PIL import Image  # type: ignore
+    # Build an indexed lookup list (FC codes are small integers 0-8) so each
+    # pixel is a single list index instead of a dict lookup or branch chain.
+    lut = [(0, 0, 0)] * (FC_GREY + 1)
+    lut[FC_LED] = led_rgb
+    for code, rgb in FLAG_RGB.items():
+        lut[code] = rgb
+
+    # Fill a flat RGB bytearray then blit the whole frame in one C call via
+    # SetImage — replaces 4096 individual SetPixel() Python→C crossings.
+    buf = bytearray(DISPLAY_ROWS * DISPLAY_COLS * 3)
+    i = 0
+    for row in frame:
+        for code in row:
+            r, g, b = lut[code]
+            buf[i] = r; buf[i + 1] = g; buf[i + 2] = b
+            i += 3
+    canvas.SetImage(Image.frombuffer('RGB', (DISPLAY_COLS, DISPLAY_ROWS), bytes(buf)))
 
 
 # ---------------------------------------------------------------------------
@@ -1100,7 +1110,6 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
         try:
             while True:
                 frame = _build_frame(ships, fetch_failed)
-                canvas.Clear()
                 write_frame_to_canvas(canvas, frame, led_rgb)
                 canvas = matrix.SwapOnVSync(canvas)
 

@@ -301,7 +301,12 @@ python3 scripts/led_display.py --server http://elberta:8080
 
 **Matrix options** (baked into `create_matrix()`):
 - `hardware_mapping = "regular-pi1"` — required for 26-pin Pi 1 Model B
-- `slowdown_gpio = 2`, `brightness = 80`, chain of two 32×64 panels
+- `slowdown_gpio = 2` (commented out), `brightness = 80`, chain of two 32×64 panels
+- `pwm_bits = 4` — 16 brightness levels; reduces driver thread CPU ~8× and eliminates flicker caused by scan-cycle preemption on the overloaded Pi 1
+- `limit_refresh_rate_hz = 100` — caps internal scan rate, further reducing CPU and stabilising timing
+
+**Frame rendering:**
+`write_frame_to_canvas()` builds a flat RGB `bytearray` using a list-indexed LUT (FC codes 0–8) then calls `canvas.SetImage()` once (PIL Image), replacing 4096 individual `SetPixel()` Python→C calls per frame. Requires `python3-pil` (`sudo apt install python3-pil`).
 
 **Prototype sample ships** (edit `SAMPLE_SHIPS` at top of file):
 ```python
@@ -318,6 +323,7 @@ python3 scripts/led_display.py --server http://elberta:8080
 - ~~Font size options~~ **Done** — `--zoom` flag activates stacked layout when 1–2 ships visible: arrow stretched to full row height (5px wide × 16 or 32px tall), ETA and flag stacked vertically (both small font) in a 17px column, name scrolls in the remaining 104px zone (vs 83px normal). Try: `python3 scripts/led_display.py --sim --sample --zoom` (trim SAMPLE_SHIPS to 1–2 entries to test stacked mode)
 - ~~Direction tolerance tuning~~ **Done** — MMSI latitude history (primary) + COG projected onto 340° waterway axis (fallback). History requires ≥ 2 observations, ≥ 60 s spread, ≥ 0.002° lat delta; falls back to axis projection for first-seen ships. `import collections` added; `_lat_history` dict, `_record_lat()`, `_direction_from_lat_history()`, `_direction_cog_axis()` added to `led_display.py`.
 - Time-of-day brightness dimming: reduce LED brightness at night/early morning for kitchen installation
+- ~~Pi 1 CPU overload / LED flicker~~ **Fixed** — `pwm_bits=4` + `limit_refresh_rate_hz=100` in `create_matrix()` reduces driver thread load ~8×; `write_frame_to_canvas()` replaced with PIL `SetImage()` bulk blit (1 C call vs 4096 `SetPixel()` calls). Also: consider `--tick-ms 150` in systemd unit if load is still high.
 - ~~Negative ETA / recent passage~~ **Done** — ships within 10 min past CPA are kept and shown with negative countdown (`◀-3m`). `_compute_eta` changed to allow `tcpa_h >= -10/60`; ETA format is `-{N}m` (1 digit, capped at 9) for negative, ` Nm` (2 digit right-justified) for positive. Past ships sort after approaching ships, most recently passed first. SAMPLE_SHIPS has a -3m test entry.
 - ~~Flag coverage~~ **Done** — curated Great Lakes / St Lawrence Seaway subset: US CA NL FR DE MT LR PA BS NO DK SE FI GB BE IT (16 countries). Unknown MMSI country codes show a `?` icon; ships with no country field show a blank. New FC_ colour constants added: FC_YELLOW, FC_BLACK, FC_GREEN. Both `led_display.py` and `led_sim.py` updated identically. Preview any flag: `python3 scripts/led_sim.py "[NL] TEST" --size 32x128 --panel 32x64`
 - ~~Compress fixed zone layout~~ **Done** — fixed zone reduced from 51 px to 39 px; name zone expanded from 77 px to 89 px; ETA now 2-digit right-justified (`▶ 4m` / `▶22m`)
