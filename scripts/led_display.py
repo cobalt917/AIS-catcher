@@ -433,9 +433,9 @@ NAV_STATUS_ICON = {
 # Prototype / sample ship data
 # ---------------------------------------------------------------------------
 SAMPLE_SHIPS = [
+    {"direction": "DOWN", "eta_min": -3, "flag": "CA", "name": "ALGOMA MARINER", "nav_status": 1},
     {"direction": "UP",   "eta_min":  4, "flag": "CA", "name": "ALGONOVA"},
     {"direction": "UP",   "eta_min": 11, "flag": "US", "name": "WHITEFISH BAY"},
-    {"direction": "DOWN", "eta_min": 22, "flag": "CA", "name": "ALGOMA MARINER", "nav_status": 1},
     {"direction": "UP",   "eta_min": 38, "flag": "CA", "name": "EDWIN H TUTTLE"},
     {"direction": "DOWN", "eta_min": 45, "flag": "US", "name": "AMERICAN SPIRIT", "nav_status": 6},
     {"direction": "UP",   "eta_min": 67, "flag": "CA", "name": "ALGOMA TRANSPORT"},
@@ -540,8 +540,8 @@ def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
 
         # Time to CPA (hours): t = -(P·V) / |V|²
         tcpa_h = -(dlon * vx + dlat * vy) / v_sq
-        if tcpa_h <= 0:
-            return None  # moving away
+        if tcpa_h < -10.0 / 60.0:
+            return None  # passed CPA more than 10 minutes ago (or never approached)
 
         # CPA distance
         cpa_x = dlon + vx * tcpa_h
@@ -607,7 +607,9 @@ def fetch_ships(server_url, station_lat, station_lon, cpa_nm, max_age_sec):
         if entry is not None:
             results.append(entry)
 
-    results.sort(key=lambda s: s["_eta_f"])
+    # Approaching ships (positive ETA) first sorted by soonest;
+    # recently-passed ships (negative ETA) last sorted by most recent passage first.
+    results.sort(key=lambda s: (1 if s["_eta_f"] < 0 else 0, abs(s["_eta_f"])))
     return results
 
 
@@ -812,7 +814,9 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
                         frame[y_top + ri][ci] = FC_LED
 
             # ETA (small font, top of stacked column)
-            eta_strip = render_strip(f"{ship['eta_min']:2d}m")
+            eta = ship['eta_min']
+            eta_fmt = f"{eta:2d}m" if eta >= 0 else f"-{min(9, abs(eta))}m"
+            eta_strip = render_strip(eta_fmt)
             for ri in range(FONT_H):
                 for ci, code in enumerate(eta_strip[ri]):
                     frame[y_top + L["eta_y_off"] + ri][L["stack_x"] + ci] = code
@@ -853,7 +857,9 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
 
             # Fixed prefix: direction arrow + right-justified ETA
             dir_char = "◀" if ship["direction"] == "UP" else "▶"
-            prefix_strip = render_strip(f"{dir_char}{ship['eta_min']:2d}m")
+            eta = ship['eta_min']
+            eta_fmt = f"{eta:2d}m" if eta >= 0 else f"-{min(9, abs(eta))}m"
+            prefix_strip = render_strip(f"{dir_char}{eta_fmt}")
             for ri in range(FONT_H):
                 for ci, code in enumerate(prefix_strip[ri]):
                     if ci < FLAG_X:
