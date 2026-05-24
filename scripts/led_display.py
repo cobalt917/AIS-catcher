@@ -965,9 +965,9 @@ def create_matrix():
     opts.hardware_mapping = "regular-pi1"
 #    opts.slowdown_gpio = 2
     opts.brightness = 80
-    opts.pwm_bits = 4                  # 16 brightness levels — enough for our palette; ~8× less driver CPU
-    opts.pwm_lsb_nanoseconds = 500    # wider LSB pulse → driver sleeps more between GPIO ops; reduces CPU ~4×
-    opts.limit_refresh_rate_hz = 50   # 50 Hz is imperceptible for ship data; halves driver loop rate
+#    opts.pwm_bits = 4                  # 16 brightness levels — enough for our palette; ~8× less driver CPU
+#    opts.pwm_lsb_nanoseconds = 500    # wider LSB pulse → driver sleeps more between GPIO ops; reduces CPU ~4×
+#    opts.limit_refresh_rate_hz = 50   # 50 Hz is imperceptible for ship data; halves driver loop rate
     return RGBMatrix(options=opts)
 
 
