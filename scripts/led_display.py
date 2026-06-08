@@ -390,6 +390,36 @@ FLAGS = {
         [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
         [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
     ],
+    # Portugal — green (hoist 2/5) + red field, yellow armillary at the join
+    "PT": [
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_Y,_Y,_Y,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_Y,_W,_Y,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_Y,_Y,_Y,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Cayman Islands — Blue Ensign: mini Union Jack canton on a blue field
+    "KY": [
+        [_W,_B,_R,_B,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_W,_R,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_R,_R,_R,_R,_R,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_W,_R,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_B,_R,_B,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # Marshall Islands — blue field, white/orange diagonal rays, star at hoist
+    "MH": [
+        [_B,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_W,_Y],
+        [_W,_W,_W,_B,_B,_B,_B,_B,_B,_B,_W,_Y,_B,_B],
+        [_B,_W,_B,_B,_B,_B,_B,_B,_W,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_W,_Y,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_W,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_W,_Y,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_Y,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
     # Unknown country — centred "?" in LED colour
     "??": [
         [_O,_O,_O,_O,_O,_L,_L,_L,_O,_O,_O,_O,_O,_O],
@@ -445,13 +475,23 @@ SAMPLE_SHIPS = [
 # Live data — ETA/CPA computation and background fetch
 # ---------------------------------------------------------------------------
 
-# Observer defaults (Detroit River, ~42.37 N / -82.92 W)
+# Observer defaults (Detroit River, ~42.36 N / -82.92 W)
 DEFAULT_SERVER        = "http://elberta:8080"
-DEFAULT_STATION_LAT   = 42.372498
-DEFAULT_STATION_LON   = -82.918296
+DEFAULT_STATION_LAT   = 42.358965
+DEFAULT_STATION_LON   = -82.91525
 DEFAULT_CPA_NM        = 2.0    # nautical mile threshold
 DEFAULT_FETCH_INTERVAL = 30    # seconds between server polls
 DEFAULT_MAX_AGE_SEC   = 300    # exclude ships last seen more than this many seconds ago
+DEFAULT_MAX_ETA_MIN   = 60.0   # exclude ships whose CPA is more than this many minutes away
+
+# Time-of-day brightness dimming defaults
+DEFAULT_BRIGHTNESS    = 80     # daytime panel brightness (0-100)
+DEFAULT_DIM_START     = "22:30"  # begin dimming at this local time
+DEFAULT_DIM_END       = "06:00"  # end dimming at this local time
+DEFAULT_DIM_FACTOR    = 0.5    # multiply brightness by this during the dim window
+
+# AIS ship type codes to exclude entirely (36 = sailing, 37 = pleasure craft)
+EXCLUDED_SHIP_TYPES   = {36, 37}
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +563,11 @@ def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
         if lat is None or lon is None:
             return None
 
+        # Drop pleasure craft (and any other excluded AIS ship types)
+        stype = ship_json.get("shiptype")
+        if stype is not None and int(stype) in EXCLUDED_SHIP_TYPES:
+            return None
+
         # Local NM offsets (ship relative to station)
         dlat = (lat - station_lat) * 60.0
         dlon = (lon - station_lon) * 60.0 * math.cos(math.radians(station_lat))
@@ -552,8 +597,16 @@ def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
             return None  # won't come close enough
 
         eta_min   = tcpa_h * 60.0
+        if eta_min > DEFAULT_MAX_ETA_MIN:
+            return None  # too far out — likely harbour traffic not actually inbound
+
         mmsi      = ship_json.get("mmsi")
         direction = _direction_from_lat_history(mmsi) or _direction_cog_axis(cog)
+
+        # Retire downriver (DOWN) ships sooner — they leave the view quickly, so
+        # stop showing them 2 minutes past CPA (vs the 10-minute grace above).
+        if direction == "DOWN" and eta_min < -2.0:
+            return None
         raw_name  = (ship_json.get("shipname") or "").strip()
         name      = raw_name if raw_name else "..."
         country   = (ship_json.get("country") or "").strip().upper()
@@ -607,9 +660,9 @@ def fetch_ships(server_url, station_lat, station_lon, cpa_nm, max_age_sec):
         if entry is not None:
             results.append(entry)
 
-    # Approaching ships (positive ETA) first sorted by soonest;
-    # recently-passed ships (negative ETA) last sorted by most recent passage first.
-    results.sort(key=lambda s: (1 if s["_eta_f"] < 0 else 0, abs(s["_eta_f"])))
+    # Sort by signed ETA ascending: the most-negative (already past CPA, about to
+    # drop off the display) sorts to the top, then soonest-arriving, then furthest.
+    results.sort(key=lambda s: s["_eta_f"])
     return results
 
 
@@ -841,7 +894,7 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
                 h_off = h_offsets.get(ship_idx, 0)
                 cycle = strip_w + SCROLL_GAP
                 for px in range(L["name_w"]):
-                    src_x = (h_off + px) % cycle
+                    src_x = int(h_off + px) % cycle
                     for ri in range(FONT_H):
                         frame[ny + ri][L["name_x"] + px] = (
                             name_strip[ri][src_x] if src_x < strip_w else FC_OFF)
@@ -892,7 +945,7 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
                 h_off = h_offsets.get(ship_idx, 0)
                 cycle = strip_w + SCROLL_GAP
                 for px in range(NAME_W):
-                    src_x = (h_off + px) % cycle
+                    src_x = int(h_off + px) % cycle
                     for ri in range(FONT_H):
                         code = name_strip[ri][src_x] if src_x < strip_w else FC_OFF
                         frame[y_top + ri][NAME_X + px] = code
@@ -952,10 +1005,35 @@ def render_wave_frame():
 
 
 # ---------------------------------------------------------------------------
+# Time-of-day brightness dimming
+# ---------------------------------------------------------------------------
+
+def _parse_hhmm(s):
+    """Parse a 'HH:MM' string into minutes-since-midnight (0-1439)."""
+    h, m = s.split(":")
+    return int(h) * 60 + int(m)
+
+
+def is_dim_now(start_min, end_min, now=None):
+    """
+    True if the current local time falls within the dim window [start, end).
+    Handles windows that wrap past midnight (e.g. 22:30 → 06:00).
+    `now` is a time.struct_time (defaults to the current local time).
+    """
+    if start_min == end_min:
+        return False  # empty/disabled window
+    now = now or time.localtime()
+    cur = now.tm_hour * 60 + now.tm_min
+    if start_min < end_min:
+        return start_min <= cur < end_min
+    return cur >= start_min or cur < end_min   # wraps midnight
+
+
+# ---------------------------------------------------------------------------
 # LED matrix output
 # ---------------------------------------------------------------------------
 
-def create_matrix():
+def create_matrix(brightness=DEFAULT_BRIGHTNESS):
     from rgbmatrix import RGBMatrix, RGBMatrixOptions  # type: ignore
     opts = RGBMatrixOptions()
     opts.rows = DISPLAY_ROWS
@@ -964,7 +1042,7 @@ def create_matrix():
     opts.parallel = 1
     opts.hardware_mapping = "regular-pi1"
 #    opts.slowdown_gpio = 2
-    opts.brightness = 80
+    opts.brightness = brightness
 #    opts.pwm_bits = 4                  # 16 brightness levels — enough for our palette; ~8× less driver CPU
 #    opts.pwm_lsb_nanoseconds = 500    # wider LSB pulse → driver sleeps more between GPIO ops; reduces CPU ~4×
 #    opts.limit_refresh_rate_hz = 50   # 50 Hz is imperceptible for ship data; halves driver loop rate
@@ -1034,14 +1112,22 @@ def frame_to_terminal(frame, color_name, force_truecolor=False):
 # ---------------------------------------------------------------------------
 
 def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
-        fetcher=None, zoom_auto=False):
+        fetcher=None, zoom_auto=False,
+        brightness=DEFAULT_BRIGHTNESS, dim_start_min=None, dim_end_min=None,
+        dim_factor=DEFAULT_DIM_FACTOR):
     """
     Animation loop.
 
-    ships     — initial ship list (used as-is when fetcher is None / --sample)
-    fetcher   — ShipFetcher instance; if set, ships are refreshed at each page turn
-    zoom_auto — if True, use 2× font scale when only 1 or 2 ships are visible
+    ships         — initial ship list (used as-is when fetcher is None / --sample)
+    fetcher       — ShipFetcher instance; if set, ships are refreshed at each page turn
+    zoom_auto     — if True, use 2× font scale when only 1 or 2 ships are visible
+    brightness    — daytime panel brightness (0-100)
+    dim_start_min — start of the nightly dim window in minutes-since-midnight (None disables)
+    dim_end_min   — end of the dim window in minutes-since-midnight
+    dim_factor    — brightness multiplier applied during the dim window
     """
+    dim_enabled  = dim_start_min is not None and dim_end_min is not None
+    dim_value    = max(0, min(100, round(brightness * dim_factor)))
     led_rgb   = LED_COLORS.get(color, LED_COLORS["amber"])
     h_offsets = {i: 0 for i in range(len(ships))}
     v_offset  = 0
@@ -1110,11 +1196,23 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
             print(f"\033[?25h{RESET}")  # restore cursor
 
     else:
-        matrix = create_matrix()
+        matrix = create_matrix(brightness)
         canvas = matrix.CreateFrameCanvas()
         needs_redraw = True
+        cur_brightness = None   # force the first brightness write
+        last_dim_check = 0.0
         try:
             while True:
+                # Re-evaluate the dim schedule roughly once a minute and update
+                # the panel brightness only when it actually changes.
+                now = time.time()
+                if dim_enabled and now - last_dim_check >= 30.0:
+                    last_dim_check = now
+                    want = dim_value if is_dim_now(dim_start_min, dim_end_min) else brightness
+                    if want != cur_brightness:
+                        matrix.brightness = want
+                        cur_brightness = want
+
                 if needs_redraw:
                     frame = _build_frame(ships, fetch_failed)
                     write_frame_to_canvas(canvas, frame, led_rgb)
@@ -1200,8 +1298,8 @@ examples:
         help="LED color (default: amber)",
     )
     parser.add_argument(
-        "--scroll-speed", type=int, default=1, metavar="PX",
-        help="pixels to advance per tick for scrolling names (default: 1)",
+        "--scroll-speed", type=float, default=1.5, metavar="PX",
+        help="pixels to advance per tick for scrolling names (default: 1.5)",
     )
     parser.add_argument(
         "--page-time", type=float, default=5.0, metavar="SEC",
@@ -1218,6 +1316,26 @@ examples:
     parser.add_argument(
         "--zoom", action="store_true",
         help="use 2× font scale when only 1 or 2 ships are visible",
+    )
+    parser.add_argument(
+        "--brightness", type=int, default=DEFAULT_BRIGHTNESS, metavar="PCT",
+        help=f"daytime panel brightness 0-100 (default: {DEFAULT_BRIGHTNESS})",
+    )
+    parser.add_argument(
+        "--dim-start", default=DEFAULT_DIM_START, metavar="HH:MM",
+        help=f"local time to begin nightly dimming (default: {DEFAULT_DIM_START})",
+    )
+    parser.add_argument(
+        "--dim-end", default=DEFAULT_DIM_END, metavar="HH:MM",
+        help=f"local time to end nightly dimming (default: {DEFAULT_DIM_END})",
+    )
+    parser.add_argument(
+        "--dim-factor", type=float, default=DEFAULT_DIM_FACTOR, metavar="F",
+        help=f"brightness multiplier during the dim window (default: {DEFAULT_DIM_FACTOR})",
+    )
+    parser.add_argument(
+        "--no-dim", action="store_true",
+        help="disable time-of-day brightness dimming entirely",
     )
     args = parser.parse_args()
 
@@ -1248,6 +1366,12 @@ examples:
             print(f"Warning: could not reach {args.server} — display will be blank until data arrives",
                   file=sys.stderr)
 
+    if args.no_dim:
+        dim_start_min = dim_end_min = None
+    else:
+        dim_start_min = _parse_hhmm(args.dim_start)
+        dim_end_min   = _parse_hhmm(args.dim_end)
+
     run(
         initial_ships,
         args.color,
@@ -1258,6 +1382,10 @@ examples:
         args.truecolor,
         fetcher=fetcher,
         zoom_auto=args.zoom,
+        brightness=args.brightness,
+        dim_start_min=dim_start_min,
+        dim_end_min=dim_end_min,
+        dim_factor=args.dim_factor,
     )
 
 

@@ -4,7 +4,7 @@
 
 AIS-catcher is running on a repurposed iMac (x86-64, Debian) with an RTL-SDR Blog V4
 dongle, tracking ships on the Detroit River / Lake Erie shipping lane near the observer
-station at approximately 42.372498 N, 82.918296 W. A Raspberry Pi 1 Model B drives
+station at approximately 42.358965 N, 82.91525 W. A Raspberry Pi 1 Model B drives
 HUB75 LED panels as a physical display.
 
 ---
@@ -278,15 +278,20 @@ python3 scripts/led_display.py --server http://elberta:8080
 | `--sim` | Render to terminal instead of real matrix | off |
 | `--sample` | Use hardcoded SAMPLE_SHIPS instead of live data | off |
 | `--server URL` | AIS-catcher base URL | `http://elberta:8080` |
-| `--lat DEG` | Observer latitude | 42.372498 |
-| `--lon DEG` | Observer longitude | -82.918296 |
+| `--lat DEG` | Observer latitude | 42.358965 |
+| `--lon DEG` | Observer longitude | -82.91525 |
 | `--cpa NM` | CPA threshold in nautical miles | 2.0 |
 | `--fetch-interval SEC` | Seconds between server polls | 30 |
 | `--max-age SEC` | Exclude ships last heard > N sec ago | 300 |
 | `--color` | LED color: amber/red/green/blue/white/yellow/cyan | amber |
-| `--scroll-speed PX` | Pixels to advance per tick for scrolling names | 1 |
+| `--scroll-speed PX` | Pixels to advance per tick for scrolling names | 1.5 |
 | `--page-time SEC` | Seconds between vertical ship rotation | 5.0 |
 | `--tick-ms MS` | Milliseconds per animation tick (~1000/fps) | 50 |
+| `--brightness PCT` | Daytime panel brightness (0–100) | 80 |
+| `--dim-start HH:MM` | Local time to begin nightly dimming | 22:30 |
+| `--dim-end HH:MM` | Local time to end nightly dimming | 06:00 |
+| `--dim-factor F` | Brightness multiplier during the dim window | 0.5 |
+| `--no-dim` | Disable time-of-day dimming entirely | off |
 | `--truecolor` | Force 24-bit ANSI color in sim mode | auto |
 
 **Display layout (per row, 32×128 px total):**
@@ -327,10 +332,16 @@ The matrix run loop only calls render+blit+`SwapOnVSync` when something actually
 - ~~Display rotates when all ships fit on screen~~ **Fixed** — `v_offset` only advances when ship count exceeds the number of visible rows (3 in normal mode, 2 in stacked mode)
 - ~~Font size options~~ **Done** — `--zoom` flag activates stacked layout when 1–2 ships visible: arrow stretched to full row height (5px wide × 16 or 32px tall), ETA and flag stacked vertically (both small font) in a 17px column, name scrolls in the remaining 104px zone (vs 83px normal). Try: `python3 scripts/led_display.py --sim --sample --zoom` (trim SAMPLE_SHIPS to 1–2 entries to test stacked mode)
 - ~~Direction tolerance tuning~~ **Done** — MMSI latitude history (primary) + COG projected onto 340° waterway axis (fallback). History requires ≥ 2 observations, ≥ 60 s spread, ≥ 0.002° lat delta; falls back to axis projection for first-seen ships. `import collections` added; `_lat_history` dict, `_record_lat()`, `_direction_from_lat_history()`, `_direction_cog_axis()` added to `led_display.py`.
-- Time-of-day brightness dimming: reduce LED brightness at night/early morning for kitchen installation
+- ~~Time-of-day brightness dimming~~ **Done** — `--brightness` (day, default 80) is reduced by `--dim-factor` (default 0.5 → 50%) during the window `--dim-start`…`--dim-end` (default 22:30–06:00, wraps midnight). `is_dim_now()` is re-checked ~every 30 s in the matrix loop and `matrix.brightness` is updated only when it changes. `--no-dim` disables. Sim mode ignores brightness (terminal preview).
 - ~~Pi 1 CPU overload / LED flicker~~ **Fixed** — `pwm_bits=4` + `pwm_lsb_nanoseconds=500` + `limit_refresh_rate_hz=50` in `create_matrix()` reduces driver thread CPU substantially; `write_frame_to_canvas()` replaced with PIL `SetImage()` bulk blit (1 C call vs 4096 `SetPixel()` calls); render loop skips rebuild when display is static; `os.nice(10)` improves SSH responsiveness. Systemd unit runs with `--tick-ms 150`. If load remains high, lower `pwm_bits` to 3.
 - ~~Negative ETA / recent passage~~ **Done** — ships within 10 min past CPA are kept and shown with negative countdown (`◀-3m`). `_compute_eta` changed to allow `tcpa_h >= -10/60`; ETA format is `-{N}m` (1 digit, capped at 9) for negative, ` Nm` (2 digit right-justified) for positive. Past ships sort after approaching ships, most recently passed first. SAMPLE_SHIPS has a -3m test entry.
 - ~~Flag coverage~~ **Done** — curated Great Lakes / St Lawrence Seaway subset: US CA NL FR DE MT LR PA BS NO DK SE FI GB BE IT (16 countries). Unknown MMSI country codes show a `?` icon; ships with no country field show a blank. New FC_ colour constants added: FC_YELLOW, FC_BLACK, FC_GREEN. Both `led_display.py` and `led_sim.py` updated identically. Preview any flag: `python3 scripts/led_sim.py "[NL] TEST" --size 32x128 --panel 32x64`
 - ~~Compress fixed zone layout~~ **Done** — fixed zone reduced from 51 px to 39 px; name zone expanded from 77 px to 89 px; ETA now 2-digit right-justified (`▶ 4m` / `▶22m`)
 - ~~AIS status icons~~ **Done** — 5×7 px static icons between flag and name: ⚓-shaped glyph (FC_GREY, rgb 130,130,130) for nav_status 1 (at anchor); red X (FC_RED) for nav_status 6 (aground); blank for all other states. Anchor design: shaft pierces ring centre (`10101` row) matching ⚓ emoji. API field: `status`. FC_GREY = 8 added to both scripts. Two SAMPLE_SHIPS entries carry test values (ALGOMA MARINER=1, AMERICAN SPIRIT=6)
-- ~~Increased flag coverage~~ - saw a freighter that was flagged in Portugal which isn't in the current list of states. Need to at least add that one and possibly others.
+- ~~Increased flag coverage — Portugal, Cayman Islands, Marshall Islands~~ **Done** — added `PT` (green/red + armillary), `KY` (Blue Ensign w/ mini Union Jack canton), `MH` (blue + diagonal white/orange rays + hoist star) to the `FLAGS` dict in both `led_display.py` and `led_sim.py`. 19 flags now.
+- ~~Retire downriver ships at -2 minute mark~~ **Done** — `_compute_eta` drops `DOWN` ships once `eta_min < -2.0`; `UP` ships keep the existing 10-minute grace window. Direction is resolved before the check.
+- ~~Change observation point to 42.358965 N, 82.91525 W~~ **Done** — `DEFAULT_STATION_LAT`/`DEFAULT_STATION_LON` updated.
+- ~~Fix negative-ETA sorting~~ **Done** — `fetch_ships` now sorts by signed `_eta_f` ascending, so the most-negative (about to drop off) is at the top, then soonest-arriving, then furthest out.
+- ~~Increase horizontal scroll speed by 50%~~ **Done** — `--scroll-speed` default 1 → 1.5 (now `float`); render code floors the offset to an int for pixel indexing.
+- ~~Remove all pleasure craft from consideration~~ **Done** — `_compute_eta` excludes AIS `shiptype` in `EXCLUDED_SHIP_TYPES` (`{36, 37}` = sailing + pleasure craft).
+- ~~Exclude ETA greater than an hour~~ **Done** — `_compute_eta` drops ships whose CPA is more than `DEFAULT_MAX_ETA_MIN` (60 min) out, filtering harbour traffic that isn't actually inbound.

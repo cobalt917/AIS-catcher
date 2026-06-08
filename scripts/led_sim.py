@@ -273,6 +273,36 @@ FLAGS = {
         [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
         [_G,_G,_G,_G,_G,_W,_W,_W,_W,_R,_R,_R,_R,_R],
     ],
+    # Portugal — green (hoist 2/5) + red field, yellow armillary at the join
+    "PT": [
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_Y,_Y,_Y,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_Y,_W,_Y,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_Y,_Y,_Y,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+        [_G,_G,_G,_G,_G,_G,_R,_R,_R,_R,_R,_R,_R,_R],
+    ],
+    # Cayman Islands — Blue Ensign: mini Union Jack canton on a blue field
+    "KY": [
+        [_W,_B,_R,_B,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_W,_R,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_R,_R,_R,_R,_R,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_W,_R,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_B,_R,_B,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
+    # Marshall Islands — blue field, white/orange diagonal rays, star at hoist
+    "MH": [
+        [_B,_W,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_W,_Y],
+        [_W,_W,_W,_B,_B,_B,_B,_B,_B,_B,_W,_Y,_B,_B],
+        [_B,_W,_B,_B,_B,_B,_B,_B,_W,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_B,_W,_Y,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_W,_Y,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_B,_B,_W,_Y,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+        [_W,_Y,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
+    ],
     # Unknown country — centred "?" in LED colour
     "??": [
         [_O,_O,_O,_O,_O,_L,_L,_L,_O,_O,_O,_O,_O,_O],
