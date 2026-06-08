@@ -1298,8 +1298,8 @@ examples:
         help="LED color (default: amber)",
     )
     parser.add_argument(
-        "--scroll-speed", type=float, default=1.5, metavar="PX",
-        help="pixels to advance per tick for scrolling names (default: 1.5)",
+        "--scroll-speed", type=float, default=2.0, metavar="PX",
+        help="pixels to advance per tick for scrolling names (default: 2.0)",
     )
     parser.add_argument(
         "--page-time", type=float, default=5.0, metavar="SEC",
