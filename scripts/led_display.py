@@ -320,6 +320,16 @@ FLAGS = {
         [_K,_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
         [_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
     ],
+    # Barbados — blue / gold / blue triband + black broken-trident head (cols 5-9)
+    "BB": [
+        [_B,_B,_B,_B,_B,_K,_Y,_K,_Y,_K,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_K,_Y,_K,_Y,_K,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_K,_K,_K,_K,_K,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+    ],
     # Norway — red + white/blue Nordic cross (cols 3-5, rows 2-4; blue centre)
     "NO": [
         [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
@@ -563,9 +573,14 @@ def _compute_eta(ship_json, station_lat, station_lon, cpa_threshold_nm):
         if lat is None or lon is None:
             return None
 
-        # Drop pleasure craft (and any other excluded AIS ship types)
+        # Require a valid ship type.  Ships with no shiptype field, or AIS type 0
+        # ("not available"), are dropped — a lot of untyped sailboats otherwise
+        # slip through.  Also drop explicitly excluded types (sailing/pleasure).
         stype = ship_json.get("shiptype")
-        if stype is not None and int(stype) in EXCLUDED_SHIP_TYPES:
+        if stype is None:
+            return None
+        stype = int(stype)
+        if stype == 0 or stype in EXCLUDED_SHIP_TYPES:
             return None
 
         # Local NM offsets (ship relative to station)

@@ -203,6 +203,16 @@ FLAGS = {
         [_K,_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
         [_K,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B,_B],
     ],
+    # Barbados — blue / gold / blue triband + black broken-trident head (cols 5-9)
+    "BB": [
+        [_B,_B,_B,_B,_B,_K,_Y,_K,_Y,_K,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_K,_Y,_K,_Y,_K,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_K,_K,_K,_K,_K,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+        [_B,_B,_B,_B,_B,_Y,_Y,_K,_Y,_Y,_B,_B,_B,_B],
+    ],
     # Norway — red + white/blue Nordic cross (cols 3-5, rows 2-4; blue centre)
     "NO": [
         [_R,_R,_R,_W,_B,_W,_R,_R,_R,_R,_R,_R,_R,_R],
