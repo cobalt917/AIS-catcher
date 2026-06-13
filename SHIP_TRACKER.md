@@ -285,7 +285,7 @@ python3 scripts/led_display.py --server http://elberta:8080
 | `--max-age SEC` | Exclude ships last heard > N sec ago | 300 |
 | `--color` | LED color: amber/red/green/blue/white/yellow/cyan | amber |
 | `--scroll-speed PX` | Pixels to advance per tick for scrolling names | 1.5 |
-| `--page-time SEC` | Seconds between vertical ship rotation | 5.0 |
+| `--page-time SEC` | Seconds each page of ships is shown before turning | 5.0 |
 | `--tick-ms MS` | Milliseconds per animation tick (~1000/fps) | 50 |
 | `--brightness PCT` | Daytime panel brightness (0–100) | 80 |
 | `--dim-start HH:MM` | Local time to begin nightly dimming | 22:30 |
@@ -302,7 +302,7 @@ python3 scripts/led_display.py --server http://elberta:8080
 - **Fixed zone (39 px):** arrow + ETA (23 px) · flag (14 px) · status icon (5 px) · each separated by 1 px gap
 - **Scrolling zone (89 px):** ship name only — scrolls if wider than 89 px, static otherwise
 - **Direction:** `◀` = upstream (UP), `▶` = downstream (DOWN)
-- **Vertical cycling:** 3 ships visible at once; rotates by 1 every `--page-time` seconds
+- **Vertical paging:** 3 ships visible at once; pages through non-overlapping groups (ships 1-3, then 4-6, then the remainder, then back to the start) every `--page-time` seconds. When paging, each margin shows two ellipses — one centred under the ETA/flag zone and one under the ship-name zone. The top margin is drawn only when ships exist before the current page, and the bottom margin only when ships exist after it — so the first page shows just bottom ellipses and the last page just top ones.
 
 **Matrix options** (baked into `create_matrix()`):
 - `hardware_mapping = "regular-pi1"` — required for 26-pin Pi 1 Model B
@@ -347,4 +347,4 @@ The matrix run loop only calls render+blit+`SwapOnVSync` when something actually
 - ~~Exclude ETA greater than an hour~~ **Done** — `_compute_eta` drops ships whose CPA is more than `DEFAULT_MAX_ETA_MIN` (60 min) out, filtering harbour traffic that isn't actually inbound.
 - ~~Add the flag of Barbados~~ **Done** — added `BB` (blue/gold/blue triband + black broken-trident head in cols 5-9) to the `FLAGS` dict in both `led_display.py` and `led_sim.py`. Note: the pre-existing `BS` entry is Bahamas, not Barbados. 20 flags now. Preview: `python3 scripts/led_sim.py "[BB] TEST" --size 32x128 --panel 32x64`
 - ~~Suppress ships that don't have their ship type available~~ **Done** — `_compute_eta` now drops any ship with no `shiptype` field or AIS type `0` ("not available"), in addition to the `EXCLUDED_SHIP_TYPES` (36/37). This filters untyped sailboats that previously slipped through. Live-data only; `SAMPLE_SHIPS` bypass `_compute_eta` so sim/sample mode is unaffected.
-- Redo vertical scrolling - the continuous scrolling is confusing with ETAs. I'd like to redo the display so that it simply pages through (i.e. show the first three, then the next three, and whatever is left, then start back over). To make clear that this is going on, I'd like the top and bottom margins (above and below the three lines of text) to display an ellipsis.
+- ~~Redo vertical scrolling — page through instead of continuous scroll~~ **Done** — `v_offset` (advanced by 1 ship-row each `--page-time`, wrapping with `% n`) is replaced by a zero-based `page` index. `render_frame` shows `ships[page*3 : page*3+3]` with no wrap (the last page is partial). New helpers `_num_pages()` and `_draw_page_ellipsis()`; the latter draws 3-dot ellipses (via `_draw_ellipsis_at` at two horizontal centres — `_ELLIPSIS_PREFIX_CX` under the ETA/flag zone and `_ELLIPSIS_NAME_CX` under the name zone) in the top (rows 0-1) margin only when `page > 0` and in the bottom (rows 30-31) margin only when `page < num_pages - 1`, so no ellipsis points where there is no more data. Both the sim and matrix run loops advance `page = (page + 1) % _num_pages(n)` on each turn (skipped in zoom-stacked mode, which never exceeds one page). `--page-time` help text updated. Test: `python3 scripts/led_display.py --sim --sample --page-time 1` (6 sample ships = 2 pages).

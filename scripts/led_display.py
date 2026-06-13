@@ -853,12 +853,57 @@ def _tall_arrow(direction, height):
     return rows
 
 
-def render_frame(ships, v_offset, h_offsets, stacked=False):
+def _num_pages(n):
+    """Number of non-overlapping pages of ROWS_PER_FRAME ships needed for n ships."""
+    return max(1, (n + ROWS_PER_FRAME - 1) // ROWS_PER_FRAME)
+
+
+# Horizontal centres for the two margin ellipses: one under the fixed ETA/flag
+# zone (cols 0..NAME_X), one under the scrolling name zone (cols NAME_X..end).
+_ELLIPSIS_PREFIX_CX = NAME_X // 2
+_ELLIPSIS_NAME_CX   = NAME_X + NAME_W // 2
+
+
+def _draw_ellipsis_at(frame, cx_center, rows):
+    """Draw one centred 3-dot ellipsis at horizontal centre cx_center on the given rows."""
+    dot_w, dot_gap, n_dots = 2, 3, 3
+    total = n_dots * dot_w + (n_dots - 1) * dot_gap        # 12 px
+    x0 = cx_center - total // 2
+    for d in range(n_dots):
+        dx = x0 + d * (dot_w + dot_gap)
+        for cx in range(dx, dx + dot_w):
+            if 0 <= cx < DISPLAY_COLS:
+                for ry in rows:
+                    frame[ry][cx] = FC_LED
+
+
+def _draw_page_ellipsis(frame, top=False, bottom=False):
+    """
+    Draw paging ellipses in the top and/or bottom margins (above and below the
+    3-row text block) to signal more ships in that direction.  Two ellipses are
+    drawn per margin: one under the fixed ETA/flag zone and one under the name zone.
+
+    top    — draw the upper ellipses (ships exist before the current page)
+    bottom — draw the lower ellipses (ships exist after the current page)
+    """
+    rows = ()
+    if top:
+        rows += (0, 1)                                     # 3 px top margin
+    if bottom:
+        rows += (DISPLAY_ROWS - 2, DISPLAY_ROWS - 1)       # bottom margin (rows 30-31)
+    if not rows:
+        return
+    _draw_ellipsis_at(frame, _ELLIPSIS_PREFIX_CX, rows)
+    _draw_ellipsis_at(frame, _ELLIPSIS_NAME_CX, rows)
+
+
+def render_frame(ships, page, h_offsets, stacked=False):
     """
     Build a complete display frame as FC_* color codes.
     Returns frame[y][x] — size DISPLAY_ROWS × DISPLAY_COLS.
 
     ships   — list of ship dicts
+    page    — zero-based page index; normal mode shows ships[page*3 : page*3+3]
     stacked — True uses zoom-stacked layout (tall arrow + stacked ETA/flag + wide name)
     """
     frame = [[FC_OFF] * DISPLAY_COLS for _ in range(DISPLAY_ROWS)]
@@ -870,7 +915,7 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
         # -- Zoom-stacked layout --
         L = _stacked_layout(min(n, 2))
         for dr in range(L["rows"]):
-            ship_idx = (v_offset + dr) % n
+            ship_idx = (page + dr) % n
             ship     = ships[ship_idx]
             y_top    = dr * L["row_h"]
 
@@ -914,11 +959,16 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
                         frame[ny + ri][L["name_x"] + px] = (
                             name_strip[ri][src_x] if src_x < strip_w else FC_OFF)
     else:
-        # -- Normal 3-row layout --
-        for dr in range(min(ROWS_PER_FRAME, n)):
-            ship_idx = (v_offset + dr) % n
-            ship     = ships[ship_idx]
-            y_top    = Y_START + dr * ROW_H
+        # -- Normal 3-row layout: page through ships in non-overlapping groups --
+        num_pages = _num_pages(n)
+        page      = page % num_pages          # clamp a stale page after the list shrinks
+        start     = page * ROWS_PER_FRAME
+        for dr in range(ROWS_PER_FRAME):
+            ship_idx = start + dr
+            if ship_idx >= n:
+                break                          # last page may be partial — no wrap-around
+            ship  = ships[ship_idx]
+            y_top = Y_START + dr * ROW_H
 
             if y_top + FONT_H > DISPLAY_ROWS:
                 break
@@ -964,6 +1014,10 @@ def render_frame(ships, v_offset, h_offsets, stacked=False):
                     for ri in range(FONT_H):
                         code = name_strip[ri][src_x] if src_x < strip_w else FC_OFF
                         frame[y_top + ri][NAME_X + px] = code
+
+        # Ellipsis only points where there is more data: none above the first
+        # page, none below the last (it is about to wrap back to the start).
+        _draw_page_ellipsis(frame, top=page > 0, bottom=page < num_pages - 1)
 
     return frame
 
@@ -1145,7 +1199,7 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
     dim_value    = max(0, min(100, round(brightness * dim_factor)))
     led_rgb   = LED_COLORS.get(color, LED_COLORS["amber"])
     h_offsets = {i: 0 for i in range(len(ships))}
-    v_offset  = 0
+    page      = 0
     last_page = time.time()
     data_src  = "sample" if fetcher is None else "live"
 
@@ -1157,13 +1211,13 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
 
     def _refresh(current_ships, current_failed):
         """Pull fresh state from fetcher; reset scroll state when ship list changes."""
-        nonlocal h_offsets, v_offset
+        nonlocal h_offsets, page
         if fetcher is None:
             return current_ships, False
         new_ships, new_failed = fetcher.get_status()
         if [s["name"] for s in new_ships] != [s["name"] for s in current_ships]:
             h_offsets = {i: 0 for i in range(len(new_ships))}
-            v_offset  = 0
+            page      = 0
         return new_ships, new_failed
 
     def _build_frame(current_ships, current_failed):
@@ -1172,7 +1226,7 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
             return render_status_frame("Server error")
         if not current_ships:
             return render_wave_frame()
-        return render_frame(current_ships, v_offset, h_offsets, _stacked(current_ships))
+        return render_frame(current_ships, page, h_offsets, _stacked(current_ships))
 
     if use_sim:
         print("\033[?25l", end="", flush=True)  # hide cursor
@@ -1197,10 +1251,8 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
                 now = time.time()
                 if now - last_page >= page_time:
                     ships, fetch_failed = _refresh(ships, fetch_failed)
-                    n = len(ships)
-                    max_visible = 2 if _stacked(ships) else ROWS_PER_FRAME
-                    if n > max_visible:
-                        v_offset = (v_offset + 1) % n
+                    if not _stacked(ships):
+                        page = (page + 1) % _num_pages(len(ships))
                     last_page = now
 
                 time.sleep(tick_ms / 1000)
@@ -1241,10 +1293,8 @@ def run(ships, color, scroll_speed, page_time, tick_ms, use_sim, truecolor,
                 now = time.time()
                 if now - last_page >= page_time:
                     ships, fetch_failed = _refresh(ships, fetch_failed)
-                    n = len(ships)
-                    max_visible = 2 if _stacked(ships) else ROWS_PER_FRAME
-                    if n > max_visible:
-                        v_offset = (v_offset + 1) % n
+                    if not _stacked(ships):
+                        page = (page + 1) % _num_pages(len(ships))
                     last_page = now
                     needs_redraw = True
 
@@ -1318,7 +1368,7 @@ examples:
     )
     parser.add_argument(
         "--page-time", type=float, default=5.0, metavar="SEC",
-        help="seconds between vertical ship rotation (default: 5.0)",
+        help="seconds each page of ships is shown before turning to the next (default: 5.0)",
     )
     parser.add_argument(
         "--tick-ms", type=int, default=50, metavar="MS",
